@@ -5,31 +5,37 @@ import (
 	"github.com/casualjim/go-rapid/remoting"
 )
 
-type View struct {
+// View interface for getting the monitors for a particular link
+type View interface {
+	MonitorsForNode(node.Addr) []node.Addr
+	LinkStatusForNode(node.Addr) remoting.LinkStatus
 }
 
-func (v *View) MonitorsForNode(addr node.Addr) []node.Addr {
+type view struct {
+}
+
+func (v *view) MonitorsForNode(addr node.Addr) []node.Addr {
 	if v.isHostPresent(addr) {
 		return v.monitorsOfNode(addr)
 	}
 	return v.expectedMonitorsOfNode(addr)
 }
 
-func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
+func (v *view) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
 	if v.isHostPresent(addr) {
 		return remoting.LinkStatus_DOWN
 	}
 	return remoting.LinkStatus_UP
 }
 
-func (v *View) isHostPresent(addr node.Addr) bool {
+func (v *view) isHostPresent(addr node.Addr) bool {
 	return false
 }
 
-func (v *View) monitorsOfNode(addr node.Addr) []node.Addr {
+func (v *view) monitorsOfNode(addr node.Addr) []node.Addr {
 	return nil
 }
 
-func (v *View) expectedMonitorsOfNode(addr node.Addr) []node.Addr {
+func (v *view) expectedMonitorsOfNode(addr node.Addr) []node.Addr {
 	return nil
 }

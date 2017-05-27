@@ -1,31 +1,26 @@
 package node
 
-import (
-	"errors"
-	"sync"
-)
+import "errors"
 
-// NodeMetadata per-node metadata which is immutable. These are simple tags like roles or other configuration parameters.
-type NodeMetadata struct {
-	lock  *sync.RWMutex
+// Metadata per-node metadata which is immutable.
+// These are simple tags like roles or other configuration parameters.
+type Metadata struct {
 	table map[Addr]map[string]string
 }
 
-// NewNodeMetadata creates a new initialized NodeMetadata object
-func NewNodeMetadata() *NodeMetadata {
-	return &NodeMetadata{
-		lock:  new(sync.RWMutex),
-		table: make(map[Addr]map[string]string),
+// NewMetadata creates a new initialized Metadata object
+func NewMetadata() *Metadata {
+	return &Metadata{
+		table: make(map[Addr]map[string]string, 150),
 	}
 }
 
 // Get the metadata for the specified node
-func (m *NodeMetadata) Get(node Addr) (map[string]string, bool, error) {
+func (m *Metadata) Get(node Addr) (map[string]string, bool, error) {
 	if node.Host == "" {
 		return nil, false, errors.New("node metadata get: node host and port values are required")
 	}
 
-	m.lock.RLock()
 	var res map[string]string
 	md, ok := m.table[node]
 	if ok && md != nil { // copy to avoid accidental modification
@@ -35,35 +30,36 @@ func (m *NodeMetadata) Get(node Addr) (map[string]string, bool, error) {
 		}
 	}
 
-	m.lock.RUnlock()
 	return res, ok, nil
 }
 
-// Set the meatadata for a node
-func (m *NodeMetadata) Set(node Addr, data map[string]string) (bool, error) {
+// Add the metadata for a node
+func (m *Metadata) Add(node Addr, data map[string]string) (bool, error) {
 	if node.Host == "" {
 		return false, errors.New("node metadata set: node host and port values are required")
 	}
 	if data == nil {
 		return false, errors.New("node metadata set: data can't be nil")
 	}
-	m.lock.Lock()
+
 	var updated bool
 	if _, ok := m.table[node]; !ok {
-		m.table[node] = data
+		// copy data to avoid accidental modifications
+		nd := make(map[string]string, len(data))
+		for k, v := range data {
+			nd[k] = v
+		}
+		m.table[node] = nd
 		updated = true
 	}
-	m.lock.Unlock()
 	return updated, nil
 }
 
 // Del the metadata for a node
-func (m *NodeMetadata) Del(node Addr) error {
+func (m *Metadata) Del(node Addr) error {
 	if node.Host == "" {
 		return errors.New("node metadata del: node host and port values are required")
 	}
-	m.lock.Lock()
 	delete(m.table, node)
-	m.lock.Unlock()
 	return nil
 }

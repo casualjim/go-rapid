@@ -4,15 +4,10 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/casualjim/go-rapid/membership"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 )
-
-// MonitorProvider interface for getting the monitors for a particular link
-type MonitorProvider interface {
-	MonitorsForNode(node.Addr) []node.Addr
-	LinkStatusForNode(node.Addr) remoting.LinkStatus
-}
 
 // New watermark buffer
 func New(k, h, l int) *Buffer {
@@ -125,7 +120,7 @@ func (b *Buffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []n
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *Buffer) InvalidateFailingLinks(view MonitorProvider) ([]node.Addr, error) {
+func (b *Buffer) InvalidateFailingLinks(view membership.View) ([]node.Addr, error) {
 	if !b.seenLinkDown {
 		return nil, nil
 	}
