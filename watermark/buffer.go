@@ -4,10 +4,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/casualjim/go-rapid/membership"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 )
+
+// MonitorProvider interface for getting the monitors for a particular link
+type MonitorProvider interface {
+	MonitorsForNode(node.Addr) []node.Addr
+	LinkStatusForNode(node.Addr) remoting.LinkStatus
+}
 
 // New watermark buffer
 func New(k, h, l int) *Buffer {
@@ -73,14 +78,15 @@ func (b *Buffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]node.A
 		return nil, fmt.Errorf("watermark aggregate link dst: %v", err)
 	}
 
-	if msg.GetLinkStatus() == remoting.LinkStatus_DOWN {
+	return b.aggregateForProposal(lnkSrc, lnkDst, msg.GetRingNumber(), msg.GetLinkStatus()), nil
+}
+
+func (b *Buffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32, status remoting.LinkStatus) []node.Addr {
+
+	if status == remoting.LinkStatus_DOWN {
 		b.seenLinkDown = true
 	}
 
-	return b.aggregateForProposal(lnkDst, lnkSrc, msg.GetRingNumber()), nil
-}
-
-func (b *Buffer) aggregateForProposal(lnkDst, lnkSrc node.Addr, ringNumber int32) []node.Addr {
 	reportsForHost, ok := b.reportsPerHost[lnkDst]
 	if !ok || reportsForHost == nil {
 		reportsForHost = make(map[int32]node.Addr, b.k)
@@ -119,19 +125,17 @@ func (b *Buffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []n
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *Buffer) InvalidateFailingLinks(view *membership.View) ([]node.Addr, error) {
+func (b *Buffer) InvalidateFailingLinks(view MonitorProvider) ([]node.Addr, error) {
 	if !b.seenLinkDown {
 		return nil, nil
 	}
 
 	var proposalsToReturn []node.Addr
 	for nodeInFlux := range b.preProposal {
-		monitors := view.MonitorsForNode(nodeInFlux)
-
 		var ringNumber int32
-		for _, monitor := range monitors {
+		for _, monitor := range view.MonitorsForNode(nodeInFlux) {
 			if hasProposal(b.proposals, monitor) || hasPreproposal(b.preProposal, monitor) {
-				aggregate := b.aggregateForProposal(nodeInFlux, monitor, ringNumber)
+				aggregate := b.aggregateForProposal(monitor, nodeInFlux, ringNumber, view.LinkStatusForNode(nodeInFlux))
 				proposalsToReturn = append(proposalsToReturn, aggregate...)
 			}
 			ringNumber++

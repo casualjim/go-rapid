@@ -1,4 +1,10 @@
-memo = "ef42cf874c4e315bbcd8950a7fc84a12d7a3e14c54af6140245ceecd4697f3f3"
+memo = "49e04f03d2119e5f0d2b63119acdacefd207907fb6f58b2338dca36c4d6d8f5d"
+
+[[projects]]
+  name = "github.com/davecgh/go-spew"
+  packages = ["spew"]
+  revision = "346938d642f2ec3594ed81d874461961cd0faa76"
+  version = "v1.1.0"
 
 [[projects]]
   name = "github.com/gogo/protobuf"
@@ -11,6 +17,18 @@ memo = "ef42cf874c4e315bbcd8950a7fc84a12d7a3e14c54af6140245ceecd4697f3f3"
   name = "github.com/golang/protobuf"
   packages = ["proto","ptypes/any"]
   revision = "7a211bcf3bce0e3f1d74f9894916e6f116ae83b4"
+
+[[projects]]
+  name = "github.com/pmezard/go-difflib"
+  packages = ["difflib"]
+  revision = "792786c7400a136282c1664665ae0a8db921c6c2"
+  version = "v1.0.0"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/stretchr/testify"
+  packages = ["assert"]
+  revision = "eb84487caee2d64c96bb5c6afb60fd4f631eb0f0"
 
 [[projects]]
   branch = "master"

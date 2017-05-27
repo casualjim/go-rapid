@@ -28,7 +28,7 @@ func (m *NodeMetadata) Get(node Addr) (map[string]string, bool, error) {
 	m.lock.RLock()
 	var res map[string]string
 	md, ok := m.table[node]
-	if ok { // copy to avoid accidental modification
+	if ok && md != nil { // copy to avoid accidental modification
 		res = make(map[string]string, len(md))
 		for k, v := range md {
 			res[k] = v
