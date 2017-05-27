@@ -87,8 +87,7 @@ func (b *Buffer) aggregateForProposal(lnkDst, lnkSrc node.Addr, ringNumber int32
 		b.reportsPerHost[lnkDst] = reportsForHost
 	}
 
-	_, hasRing := reportsForHost[ringNumber]
-	if hasRing {
+	if _, hasRing := reportsForHost[ringNumber]; hasRing {
 		return nil
 	}
 
