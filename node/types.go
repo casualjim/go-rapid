@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
 )
@@ -20,13 +21,33 @@ const (
 	ClusterEventKicked
 )
 
-// HostAndPort for a member
-type HostAndPort struct {
-	Host string
-	Port uint16
+// ParseAddr to host and port number, the addr string can be in the form address:port_number of address:port_name
+func ParseAddr(addr string) (Addr, error) {
+	h, p, err := net.SplitHostPort(addr)
+	if err != nil {
+		return Addr{}, fmt.Errorf("host and port: %v", err)
+	}
+
+	if p == "" {
+		return Addr{Host: h, Port: -1}, nil
+	}
+
+	pn, err := net.LookupPort("", p)
+	if err != nil {
+		return Addr{Host: h, Port: -1}, fmt.Errorf("host and port: %v", err)
+	}
+
+	return Addr{Host: h, Port: int32(pn)}, nil
 }
 
-func (h HostAndPort) String() string {
+// Addr for a member
+type Addr struct {
+	Host string
+	Port int32
+	_    struct{} // avoid unkeyed usage
+}
+
+func (h Addr) String() string {
 	var builder []string
 
 	if strings.ContainsRune(h.Host, ':') {
@@ -42,13 +63,13 @@ func (h HostAndPort) String() string {
 	return strings.Join(builder, "")
 }
 
-// A NodeStatusChange event. It is the format used to inform applications about cluster view change events.
-type NodeStatusChange struct {
-	Addr     HostAndPort
+// A StatusChange event. It is the format used to inform applications about cluster view change events.
+type StatusChange struct {
+	Addr     Addr
 	Status   string
 	Metadata map[string]string
 }
 
-func (n NodeStatusChange) String() string {
+func (n StatusChange) String() string {
 	return fmt.Sprintf("%s:%s:%+v", n.Addr, n.Status, n.Metadata)
 }

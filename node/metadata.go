@@ -8,19 +8,19 @@ import (
 // NodeMetadata per-node metadata which is immutable. These are simple tags like roles or other configuration parameters.
 type NodeMetadata struct {
 	lock  *sync.RWMutex
-	table map[HostAndPort]map[string]string
+	table map[Addr]map[string]string
 }
 
 // NewNodeMetadata creates a new initialized NodeMetadata object
 func NewNodeMetadata() *NodeMetadata {
 	return &NodeMetadata{
 		lock:  new(sync.RWMutex),
-		table: make(map[HostAndPort]map[string]string),
+		table: make(map[Addr]map[string]string),
 	}
 }
 
 // Get the metadata for the specified node
-func (m *NodeMetadata) Get(node HostAndPort) (map[string]string, bool, error) {
+func (m *NodeMetadata) Get(node Addr) (map[string]string, bool, error) {
 	if node.Host == "" {
 		return nil, false, errors.New("node metadata get: node host and port values are required")
 	}
@@ -40,7 +40,7 @@ func (m *NodeMetadata) Get(node HostAndPort) (map[string]string, bool, error) {
 }
 
 // Set the meatadata for a node
-func (m *NodeMetadata) Set(node HostAndPort, data map[string]string) (bool, error) {
+func (m *NodeMetadata) Set(node Addr, data map[string]string) (bool, error) {
 	if node.Host == "" {
 		return false, errors.New("node metadata set: node host and port values are required")
 	}
@@ -58,7 +58,7 @@ func (m *NodeMetadata) Set(node HostAndPort, data map[string]string) (bool, erro
 }
 
 // Del the metadata for a node
-func (m *NodeMetadata) Del(node HostAndPort) error {
+func (m *NodeMetadata) Del(node Addr) error {
 	if node.Host == "" {
 		return errors.New("node metadata del: node host and port values are required")
 	}
