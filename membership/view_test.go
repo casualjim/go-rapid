@@ -1,7 +1,6 @@
 package membership
 
 import (
-	"log"
 	"testing"
 
 	"github.com/casualjim/go-rapid/node"
@@ -184,9 +183,6 @@ func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 	require.NoError(t, vw.RingAdd(n1, uuid.NewRandom()))
 	require.NoError(t, vw.RingAdd(n2, uuid.NewRandom()))
 	require.NoError(t, vw.RingAdd(n3, uuid.NewRandom()))
-	vw.rings[0].Each(func(_ int, v interface{}) {
-		log.Println("value:", v)
-	})
 
 	mee, err := vw.KnownMonitoreesForNode(n1)
 	if assert.NoError(t, err) {

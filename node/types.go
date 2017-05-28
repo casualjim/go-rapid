@@ -88,10 +88,10 @@ func getEndian() binary.ByteOrder {
 
 // Checksum creates a hashcode with the specified seed
 func (h Addr) Checksum(seed int) int {
-	hch := xxhash.ChecksumString32S(h.Host, uint32(seed))
+	hch := xxhash.ChecksumString64S(h.Host, uint64(seed))
 	prt := make([]byte, 4)
 	endianness.PutUint32(prt, uint32(h.Port))
-	hcp := xxhash.Checksum32S(prt, uint32(seed))
+	hcp := xxhash.Checksum64S(prt, uint64(seed))
 	return int(hch*31 + hcp)
 }
 

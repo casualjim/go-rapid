@@ -45,7 +45,7 @@ func NewView(k int, uuids []uuid.UUID, nodeAddrs []node.Addr) *View {
 
 	rings := make(map[int]*treeset.Set, k)
 	for i := 0; i < k; i++ {
-		ts := treeset.NewWith(addressComparator(k))
+		ts := treeset.NewWith(addressComparator(i))
 		for _, n := range nodeAddrs {
 			ts.Add(n)
 		}
@@ -158,31 +158,46 @@ func (v *View) knownMonitorsForNode(addr node.Addr) []node.Addr {
 		return nil
 	}
 	var monitors []node.Addr
-RINGS:
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
-
-		iter := lst.Iterator()
-		for iter.Next() {
-			if iter.Value() == addr {
-				var foundNext bool
-				for iter.Prev() {
-					monitors = append(monitors, iter.Value().(node.Addr))
-					foundNext = true
-				}
-				if foundNext {
-					continue RINGS
-				} else {
-					if iter.First() {
-						monitors = append(monitors, iter.Value().(node.Addr))
-					}
-				}
-				break // we found our node but had no next value, bail and move to first
-			}
+		val, found := higher(lst, addr)
+		if found {
+			monitors = append(monitors, val)
 		}
-
 	}
 	return monitors
+}
+
+func higher(lst *treeset.Set, addr node.Addr) (successor node.Addr, found bool) {
+	iter := lst.Iterator()
+	for iter.Next() {
+		if iter.Value() == addr {
+			if iter.Next() {
+				return iter.Value().(node.Addr), true
+			}
+			break
+		}
+	}
+	if iter.First() {
+		return iter.Value().(node.Addr), true
+	}
+	return node.Addr{}, false
+}
+
+func lower(lst *treeset.Set, addr node.Addr) (predecessor node.Addr, found bool) {
+	iter := lst.Iterator()
+	for iter.Next() {
+		if iter.Value() == addr {
+			if iter.Prev() { // peek for next
+				return iter.Value().(node.Addr), true
+			}
+			break
+		}
+	}
+	if iter.Last() {
+		return iter.Value().(node.Addr), true
+	}
+	return node.Addr{}, false
 }
 
 // KnownMonitoreesForNode returns the set of nodes monitored by the specified node
@@ -198,22 +213,12 @@ func (v *View) knownMonitoreesForNode(addr node.Addr) []node.Addr {
 		return nil
 	}
 	var monitorees []node.Addr
-RINGS:
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
 
-		iter := lst.Iterator()
-		for iter.Next() {
-			if iter.Value() == addr {
-				if iter.Next() {
-					monitorees = append(monitorees, iter.Value().(node.Addr))
-					continue RINGS // goto next ring, we got what we need from this one
-				}
-				break // we found our node but had no previous value, bail and move to last
-			}
-		}
-		if iter.Last() {
-			monitorees = append(monitorees, iter.Value().(node.Addr))
+		predecessor, found := lower(lst, addr)
+		if found {
+			monitorees = append(monitorees, predecessor)
 		}
 	}
 	return monitorees
@@ -226,26 +231,16 @@ func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {
 	if v.rings[0].Size() == 0 {
 		return nil
 	}
-	var monitorees []node.Addr
-RINGS:
+	var monitors []node.Addr
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
 
-		iter := lst.Iterator()
-		for iter.Next() {
-			if iter.Value() == addr {
-				if iter.Prev() {
-					monitorees = append(monitorees, iter.Value().(node.Addr))
-					continue RINGS // goto next ring, we got what we need from this one
-				}
-				break // we found our node but had no previous value, bail and move to last
-			}
-		}
-		if iter.Last() {
-			monitorees = append(monitorees, iter.Value().(node.Addr))
+		predecessor, found := lower(lst, addr)
+		if found {
+			monitors = append(monitors, predecessor)
 		}
 	}
-	return monitorees
+	return monitors
 }
 
 // GetRing gets the list of hosts in the k'th ring.
