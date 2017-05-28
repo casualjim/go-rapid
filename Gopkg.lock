@@ -14,10 +14,10 @@
   version = "v1.1.0"
 
 [[projects]]
-  branch = "master"
   name = "github.com/emirpasic/gods"
   packages = ["containers","sets","sets/treeset","trees","trees/redblacktree","utils"]
   revision = "f6c17b524822278a87e3b3bd809fec33b51f5b46"
+  version = "v1.9.0"
 
 [[projects]]
   branch = "master"
@@ -47,7 +47,7 @@
   branch = "master"
   name = "github.com/stretchr/testify"
   packages = ["assert","require"]
-  revision = "e68c5c520826657b647fb9090f1620f8862e7b72"
+  revision = "b8c9b4ef3dade3a13f662c95942dcda39e962cd4"
 
 [[projects]]
   branch = "master"
