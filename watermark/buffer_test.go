@@ -3,9 +3,12 @@ package watermark
 import (
 	"testing"
 
+	"github.com/casualjim/go-rapid/membership"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
+	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -398,7 +401,61 @@ func TestWatermark_Batch(t *testing.T) {
 }
 
 func TestWatermark_InvalidateFailingLinks(t *testing.T) {
+	vw := membership.NewView(k, nil, nil)
+	wb := New(k, h, l)
+	const numNodes = 30
+	var hosts []node.Addr
+	for i := 0; i < numNodes; i++ {
+		n := node.Addr{Host: "127.0.0.2", Port: int32(2 + i)}
+		hosts = append(hosts, n)
+		require.NoError(t, vw.RingAdd(n, uuid.NewRandom()))
+	}
 
+	dst := hosts[0]
+	monitors, err := vw.KnownMonitorsForNode(dst)
+	require.NoError(t, err)
+	require.Len(t, monitors, k)
+
+	var ret []node.Addr
+	// This adds alerts from the monitors[0, H - 1) of node dst.
+	for i := 0; i < h-1; i++ {
+		ret, _ = wb.AggregateForProposal(createLinkUpdateMessage(
+			monitors[i],
+			dst,
+			remoting.LinkStatus_DOWN,
+			int32(i),
+		))
+		assert.Empty(t, ret)
+		assert.Equal(t, 0, wb.KnownProposals())
+	}
+
+	// Next, we add alerts *about* monitors[H, K) of node dst.
+	failedMonitors := make(map[node.Addr]struct{}, k-h-1)
+	for i := h - 1; i < k; i++ {
+		monitorsOfMonitor, err := vw.KnownMonitorsForNode(monitors[i])
+		require.NoError(t, err)
+		failedMonitors[monitors[i]] = struct{}{}
+
+		for j := 0; j < k; j++ {
+			ret, _ = wb.AggregateForProposal(createLinkUpdateMessage(
+				monitorsOfMonitor[j],
+				monitors[i],
+				remoting.LinkStatus_DOWN,
+				int32(j),
+			))
+			assert.Empty(t, ret)
+			assert.Equal(t, 0, wb.KnownProposals())
+		}
+	}
+
+	ret, err = wb.InvalidateFailingLinks(vw)
+	require.NoError(t, err)
+	assert.Len(t, ret, 4)
+	assert.Equal(t, 1, wb.KnownProposals())
+	for _, host := range ret {
+		_, hasFailed := failedMonitors[host]
+		assert.True(t, hasFailed || host == dst)
+	}
 }
 
 func createLinkUpdateMessage(src, dst node.Addr, status remoting.LinkStatus, ringNumber int32) *remoting.LinkUpdateMessage {

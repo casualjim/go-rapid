@@ -120,7 +120,7 @@ func (b *Buffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []n
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *Buffer) InvalidateFailingLinks(view membership.View) ([]node.Addr, error) {
+func (b *Buffer) InvalidateFailingLinks(view *membership.View) ([]node.Addr, error) {
 	if !b.seenLinkDown {
 		return nil, nil
 	}
