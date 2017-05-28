@@ -207,3 +207,153 @@ func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 	assert.Len(t, toNodeSet(mee2), 1)
 	assert.Len(t, toNodeSet(mms2), 1)
 }
+
+func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
+	vw := NewView(k, nil, nil)
+	const numNodes = 1000
+	var list []node.Addr
+
+	for i := 0; i < numNodes; i++ {
+		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		list = append(list, n)
+		require.NoError(t, vw.RingAdd(n, uuid.NewRandom()))
+	}
+
+	for i := 0; i < numNodes; i++ {
+		mees, meerr := vw.KnownMonitoreesForNode(list[i])
+		mms, mmerr := vw.KnownMonitorsForNode(list[i])
+		if assert.NoError(t, meerr) {
+			assert.Len(t, mees, k)
+		}
+		if assert.NoError(t, mmerr) {
+			assert.Len(t, mms, k)
+		}
+	}
+}
+
+func TestView_MonitoringRelationshipBootstrap(t *testing.T) {
+	vw := NewView(k, nil, nil)
+	const serverPort = 1234
+	n := node.Addr{Host: "127.0.0.1", Port: serverPort}
+	require.NoError(t, vw.RingAdd(n, uuid.NewRandom()))
+
+	joiningNode := node.Addr{Host: "127.0.0.1", Port: serverPort + 1}
+	exms := vw.ExpectedMonitorsForNode(joiningNode)
+	assert.Len(t, exms, k)
+	assert.Len(t, toNodeSet(exms), 1)
+	assert.Equal(t, n, exms[0])
+}
+
+func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
+	vw := NewView(k, nil, nil)
+	const (
+		serverPort = 1234
+		numNodes   = 20
+	)
+
+	joiningNode := node.Addr{Host: "127.0.0.1", Port: serverPort - 1}
+	var numMonitor int
+
+	for i := 0; i < numNodes; i++ {
+		n := node.Addr{Host: "127.0.0.1", Port: int32(serverPort + i)}
+		require.NoError(t, vw.RingAdd(n, uuid.NewRandom()))
+		exms := vw.ExpectedMonitorsForNode(joiningNode)
+		numMonitorActual := len(exms)
+		assert.True(t, numMonitor <= numMonitorActual)
+		numMonitor = numMonitorActual
+	}
+	assert.True(t, k-3 <= numMonitor)
+	assert.True(t, k >= numMonitor)
+}
+
+func TestView_NodeUniqueIDNoDeletions(t *testing.T) {
+	vw := NewView(k, nil, nil)
+	var numErrs int
+
+	n1, uuid1 := node.Addr{Host: "127.0.0.1", Port: 1}, uuid.NewRandom()
+	require.NoError(t, vw.RingAdd(n1, uuid1))
+
+	n2, uuid2 := node.Addr{Host: "127.0.0.1", Port: 1}, uuid.UUID(uuid1[:])
+	// same host, same id
+	if assert.Error(t, vw.RingAdd(n2, uuid2)) {
+		numErrs++
+	}
+	require.Equal(t, 1, numErrs)
+
+	// same host, different id
+	if assert.Error(t, vw.RingAdd(n2, uuid.NewRandom())) {
+		numErrs++
+	}
+	require.Equal(t, 2, numErrs)
+
+	n3 := node.Addr{Host: "127.0.0.1", Port: 2}
+	// different host, same id
+	if assert.Error(t, vw.RingAdd(n3, uuid2)) {
+		numErrs++
+	}
+	require.Equal(t, 3, numErrs)
+
+	require.NoError(t, vw.RingAdd(n3, uuid.NewRandom()))
+	assert.Len(t, vw.GetRing(0), 2)
+}
+
+func TestView_NodeUniqueIDWithDeletions(t *testing.T) {
+	vw := NewView(k, nil, nil)
+
+	n1, uuid1 := node.Addr{Host: "127.0.0.1", Port: 1}, uuid.NewRandom()
+	require.NoError(t, vw.RingAdd(n1, uuid1))
+
+	n2, uuid2 := node.Addr{Host: "127.0.0.1", Port: 2}, uuid.NewRandom()
+	require.NoError(t, vw.RingAdd(n2, uuid2))
+	// remove node from the ring
+	require.NoError(t, vw.RingDel(n2))
+
+	// node rejoins the ring
+	if assert.Error(t, vw.RingAdd(n2, uuid2)) {
+		// re-attempt with a new id
+		if assert.NoError(t, vw.RingAdd(n2, uuid.NewRandom())) {
+			assert.Len(t, vw.GetRing(0), 2)
+		}
+	}
+}
+
+func TestView_NodeConfigurationChange(t *testing.T) {
+	vw := NewView(k, nil, nil)
+	const numNodes = 1000
+	set := make(map[int64]struct{}, numNodes)
+	for i := 0; i < numNodes; i++ {
+		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		require.NoError(t, vw.RingAdd(n, uuid.NewMD5(uuid.NIL, []byte(n.String()))))
+		set[vw.ConfigurationID()] = struct{}{}
+	}
+	assert.Len(t, set, numNodes)
+}
+
+func TestView_NodeConfigurationsAcrossMViews(t *testing.T) {
+	vw1 := NewView(k, nil, nil)
+	vw2 := NewView(k, nil, nil)
+	const numNodes = 1000
+
+	list1 := make([]int64, numNodes)
+	list2 := make([]int64, 0, numNodes)
+
+	for i := 0; i < numNodes; i++ {
+		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		require.NoError(t, vw1.RingAdd(n, uuid.NewMD5(uuid.NIL, []byte(n.String()))))
+		list1[i] = vw1.ConfigurationID()
+	}
+
+	for i := numNodes - 1; i > -1; i-- {
+		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		require.NoError(t, vw2.RingAdd(n, uuid.NewMD5(uuid.NIL, []byte(n.String()))))
+		list2 = append(list2, vw2.ConfigurationID())
+	}
+
+	assert.Len(t, list1, numNodes)
+	assert.Len(t, list2, numNodes)
+
+	for i := 0; i < numNodes-1; i++ {
+		assert.NotEqual(t, list1[i], list2[i], "values were different at %d", i)
+	}
+	assert.Equal(t, list1[numNodes-1], list2[numNodes-1])
+}
