@@ -397,6 +397,10 @@ func TestWatermark_Batch(t *testing.T) {
 	}
 }
 
+func TestWatermark_InvalidateFailingLinks(t *testing.T) {
+
+}
+
 func createLinkUpdateMessage(src, dst node.Addr, status remoting.LinkStatus, ringNumber int32) *remoting.LinkUpdateMessage {
 	return &remoting.LinkUpdateMessage{
 		LinkSrc:         src.String(),

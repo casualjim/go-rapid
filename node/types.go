@@ -1,10 +1,14 @@
 package node
 
 import (
+	"encoding/binary"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
+	"unsafe"
+
+	"github.com/OneOfOne/xxhash"
 )
 
 // ClusterEvent to subscribe from the cluster
@@ -57,10 +61,47 @@ func (h Addr) String() string {
 	}
 
 	if h.Port > 0 {
-		builder = append(builder, ":", strconv.FormatUint(uint64(h.Port), 10))
+		builder = append(builder, ":", strconv.Itoa(int(h.Port)))
 	}
 
 	return strings.Join(builder, "")
+}
+
+//#nosec
+const intSize int = int(unsafe.Sizeof(0))
+
+var endianness binary.ByteOrder
+
+func init() {
+	endianness = getEndian()
+}
+
+func getEndian() binary.ByteOrder {
+	var i = 0x1
+	//#nosec
+	bs := (*[intSize]byte)(unsafe.Pointer(&i))
+	if bs[0] == 0 {
+		return binary.BigEndian
+	}
+	return binary.LittleEndian
+}
+
+// Checksum creates a hashcode with the specified seed
+func (h Addr) Checksum(seed int) int {
+	hch := xxhash.ChecksumString32S(h.Host, uint32(seed))
+	prt := make([]byte, 4)
+	endianness.PutUint32(prt, uint32(h.Port))
+	hcp := xxhash.Checksum32S(prt, uint32(seed))
+	return int(hch*31 + hcp)
+}
+
+// Hashcode for the addr object
+func (h Addr) Hashcode() int64 {
+	hch := xxhash.ChecksumString32(h.Host)
+	prt := make([]byte, 4)
+	endianness.PutUint32(prt, uint32(h.Port))
+	hcp := xxhash.Checksum32(prt)
+	return int64(hch*47 + hcp)
 }
 
 // A StatusChange event. It is the format used to inform applications about cluster view change events.
