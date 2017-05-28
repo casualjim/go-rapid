@@ -101,7 +101,7 @@ func (h Addr) Hashcode() int64 {
 	prt := make([]byte, 4)
 	endianness.PutUint32(prt, uint32(h.Port))
 	hcp := xxhash.Checksum32(prt)
-	return int64(hch*47 + hcp)
+	return int64(hch*31 + hcp)
 }
 
 // A StatusChange event. It is the format used to inform applications about cluster view change events.

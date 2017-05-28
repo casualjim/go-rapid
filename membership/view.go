@@ -119,7 +119,7 @@ func (v *View) RingAdd(addr node.Addr, id uuid.UUID) error {
 }
 
 // RingDel a host from all K rings.
-func (v *View) RingDel(addr node.Addr, id uuid.UUID) error {
+func (v *View) RingDel(addr node.Addr) error {
 	if !v.IsKnownMember(addr) {
 		return &NodeNotInRingError{Node: addr}
 	}
@@ -165,16 +165,22 @@ RINGS:
 		iter := lst.Iterator()
 		for iter.Next() {
 			if iter.Value() == addr {
-				if iter.Next() {
+				var foundNext bool
+				for iter.Prev() {
 					monitors = append(monitors, iter.Value().(node.Addr))
-					continue RINGS // goto next ring, we got what we need from this one
+					foundNext = true
+				}
+				if foundNext {
+					continue RINGS
+				} else {
+					if iter.First() {
+						monitors = append(monitors, iter.Value().(node.Addr))
+					}
 				}
 				break // we found our node but had no next value, bail and move to first
 			}
 		}
-		if iter.First() {
-			monitors = append(monitors, iter.Value().(node.Addr))
-		}
+
 	}
 	return monitors
 }
@@ -199,7 +205,7 @@ RINGS:
 		iter := lst.Iterator()
 		for iter.Next() {
 			if iter.Value() == addr {
-				if iter.Prev() {
+				if iter.Next() {
 					monitorees = append(monitorees, iter.Value().(node.Addr))
 					continue RINGS // goto next ring, we got what we need from this one
 				}
@@ -242,11 +248,11 @@ RINGS:
 	return monitorees
 }
 
-// Ring get the list of hosts in the k'th ring.
-func (v *View) Ring(k int) []node.Addr {
+// GetRing gets the list of hosts in the k'th ring.
+func (v *View) GetRing(k int) []node.Addr {
 	addrs := make([]node.Addr, v.rings[0].Size())
 	v.rings[0].Each(func(i int, v interface{}) {
-		addrs = append(addrs, v.(node.Addr))
+		addrs[i] = v.(node.Addr)
 	})
 	return addrs
 }
