@@ -97,10 +97,10 @@ func (h Addr) Checksum(seed int) int {
 
 // Hashcode for the addr object
 func (h Addr) Hashcode() int64 {
-	hch := xxhash.ChecksumString32(h.Host)
+	hch := xxhash.ChecksumString64(h.Host)
 	prt := make([]byte, 4)
 	endianness.PutUint32(prt, uint32(h.Port))
-	hcp := xxhash.Checksum32(prt)
+	hcp := xxhash.Checksum64(prt)
 	return int64(hch*31 + hcp)
 }
 
