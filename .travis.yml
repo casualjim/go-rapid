@@ -1,14 +1,17 @@
 language: go
+sudo: false
 go:
 - 1.8.x
+go_import_path: github.com/casualjim/go-rapid
 before_install:
 #- .travis/install-protoc.sh 3.3.0
 install:
-- go get github.com/gogo/protobuf/protoc-gen-gofast
+# - go get github.com/gogo/protobuf/protoc-gen-gofast
 - go get github.com/gogo/protobuf/protoc-gen-gogofast
 
 script:
 #- go generate
+- make check
 - ./.travis/coverage
 after_success:
 - bash <(curl -s https://codecov.io/bash)
