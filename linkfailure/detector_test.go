@@ -215,7 +215,7 @@ func TestDetector_PingPong_Bootstrapped(t *testing.T) {
 	mockClient := mocks.NewMockClient(ctrl)
 	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	ctx := context.TODO()
-	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(new(remoting.ProbeResponse), nil)
+	mockClient.EXPECT().SendProbe(ctx, mee, gomock.Any()).Return(new(remoting.ProbeResponse), nil)
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -228,6 +228,34 @@ func TestDetector_PingPong_Bootstrapped(t *testing.T) {
 
 	assert.NoError(t, pp.CheckMonitoree(ctx, mee))
 }
+func TestDetector_PingPong_Bootstrapping_Success(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	mockClient := mocks.NewMockClient(ctrl)
+	ctx := context.TODO()
+	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
+	bsr := &remoting.ProbeResponse{Status: remoting.NodeStatus_BOOTSTRAPPING}
+	gomock.InOrder(
+		mockClient.EXPECT().SendProbe(ctx, mee, gomock.Any()).Return(bsr, nil),
+		mockClient.EXPECT().SendProbe(ctx, mee, gomock.Any()).Return(new(remoting.ProbeResponse), nil),
+	)
+
+	pp := PingPongDetector(PingPongOpts{
+		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
+		Client: mockClient,
+		Log:    log.New(os.Stderr, "[rapid] ", 0),
+	})
+
+	ppd := pp.(*pingPongDetector)
+	ppd.failureCount.data[mee] = &counter{val: 0}
+
+	assert.NoError(t, pp.CheckMonitoree(ctx, mee))
+	assert.Equal(t, 1, ppd.bootstrapResponseCount.Get(mee))
+	assert.NoError(t, pp.CheckMonitoree(ctx, mee))
+	assert.False(t, ppd.bootstrapResponseCount.Has(mee))
+	assert.Equal(t, 0, ppd.bootstrapResponseCount.Get(mee))
+}
 
 func TestDetector_PingPong_Failed(t *testing.T) {
 	ctrl := gomock.NewController(t)
@@ -236,7 +264,7 @@ func TestDetector_PingPong_Failed(t *testing.T) {
 	mockClient := mocks.NewMockClient(ctrl)
 	ctx := context.TODO()
 	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
-	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(nil, errors.New("failed"))
+	mockClient.EXPECT().SendProbe(ctx, mee, gomock.Any()).Return(nil, errors.New("failed"))
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -259,7 +287,7 @@ func TestDetector_PingPong_Bootstrapping(t *testing.T) {
 	ctx := context.TODO()
 	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	bsr := &remoting.ProbeResponse{Status: remoting.NodeStatus_BOOTSTRAPPING}
-	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(bsr, nil).Times(bootstrapCountThreshold + 1)
+	mockClient.EXPECT().SendProbe(ctx, mee, gomock.Any()).Return(bsr, nil).Times(bootstrapCountThreshold + 1)
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -296,4 +324,7 @@ func TestDetector_CounterMap(t *testing.T) {
 	assert.Equal(t, 2, mp.Get(addr1))
 	assert.Equal(t, 0, mp.Get(addr3))
 	assert.Equal(t, 1, mp.Add(addr3))
+
+	mp.Del(addr3)
+	assert.False(t, mp.Has(addr3))
 }

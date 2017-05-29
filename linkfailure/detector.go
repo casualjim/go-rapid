@@ -26,7 +26,7 @@ func init() {
 }
 
 // The Detector interface. Objects that implement this interface can be
-// supplied to the MembershipService to perform failure detection.a
+// supplied to the MembershipService to perform failure detection.
 type Detector interface {
 	CheckMonitoree(context.Context, node.Addr) error
 	OnMembershipChange([]node.Addr)
@@ -200,7 +200,7 @@ func (p *pingPongDetector) CheckMonitoree(context context.Context, addr node.Add
 	}
 
 	msg := messagePool.Get(addr)
-	resp, err := p.client.ReceiveProbe(context, addr, msg)
+	resp, err := p.client.SendProbe(context, addr, msg)
 	messagePool.Put(msg)
 	if err != nil {
 		p.log.Printf("check monitoree self=%s node=%s status=down", p.addr, addr)
@@ -216,6 +216,7 @@ func (p *pingPongDetector) CheckMonitoree(context context.Context, addr node.Add
 			p.failureCount.Add(addr)
 		}
 	default:
+		p.bootstrapResponseCount.Del(addr)
 		p.log.Printf("check monitoree self=%s node=%s status=up", p.addr, addr)
 	}
 	return nil
@@ -315,7 +316,7 @@ func (c *concCounterMap) Get(addr node.Addr) int {
 		c.lock.RUnlock()
 		return int(val.Get())
 	}
-	c.lock.Unlock()
+	c.lock.RUnlock()
 	return 0
 }
 
@@ -333,5 +334,11 @@ func (c *concCounterMap) ResetFor(addrs []node.Addr) {
 			delete(c.data, k)
 		}
 	}
+	c.lock.Unlock()
+}
+
+func (c *concCounterMap) Del(addr node.Addr) {
+	c.lock.Lock()
+	delete(c.data, addr)
 	c.lock.Unlock()
 }
