@@ -31,70 +31,70 @@ func (_m *MockClient) EXPECT() *_MockClientRecorder {
 	return _m.recorder
 }
 
-func (_m *MockClient) Gossip(_param0 context.Context, _param1 *remoting.GossipMessage) (*remoting.GossipResponse, error) {
-	ret := _m.ctrl.Call(_m, "Gossip", _param0, _param1)
+func (_m *MockClient) Gossip(_param0 context.Context, _param1 node.Addr, _param2 *remoting.GossipMessage) (*remoting.GossipResponse, error) {
+	ret := _m.ctrl.Call(_m, "Gossip", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.GossipResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) Gossip(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "Gossip", arg0, arg1)
+func (_mr *_MockClientRecorder) Gossip(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Gossip", arg0, arg1, arg2)
 }
 
-func (_m *MockClient) ReceiveConsensusProposal(_param0 context.Context, _param1 *remoting.ConsensusProposal) (*remoting.ConsensusProposalResponse, error) {
-	ret := _m.ctrl.Call(_m, "ReceiveConsensusProposal", _param0, _param1)
+func (_m *MockClient) ReceiveConsensusProposal(_param0 context.Context, _param1 node.Addr, _param2 *remoting.ConsensusProposal) (*remoting.ConsensusProposalResponse, error) {
+	ret := _m.ctrl.Call(_m, "ReceiveConsensusProposal", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.ConsensusProposalResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) ReceiveConsensusProposal(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveConsensusProposal", arg0, arg1)
+func (_mr *_MockClientRecorder) ReceiveConsensusProposal(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveConsensusProposal", arg0, arg1, arg2)
 }
 
-func (_m *MockClient) ReceiveJoinMessage(_param0 context.Context, _param1 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
-	ret := _m.ctrl.Call(_m, "ReceiveJoinMessage", _param0, _param1)
+func (_m *MockClient) ReceiveJoinMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
+	ret := _m.ctrl.Call(_m, "ReceiveJoinMessage", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.JoinResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) ReceiveJoinMessage(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveJoinMessage", arg0, arg1)
+func (_mr *_MockClientRecorder) ReceiveJoinMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveJoinMessage", arg0, arg1, arg2)
 }
 
-func (_m *MockClient) ReceiveJoinPhase2Message(_param0 context.Context, _param1 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
-	ret := _m.ctrl.Call(_m, "ReceiveJoinPhase2Message", _param0, _param1)
+func (_m *MockClient) ReceiveJoinPhase2Message(_param0 context.Context, _param1 node.Addr, _param2 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
+	ret := _m.ctrl.Call(_m, "ReceiveJoinPhase2Message", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.JoinResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) ReceiveJoinPhase2Message(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveJoinPhase2Message", arg0, arg1)
+func (_mr *_MockClientRecorder) ReceiveJoinPhase2Message(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveJoinPhase2Message", arg0, arg1, arg2)
 }
 
-func (_m *MockClient) ReceiveLinkUpdateMessage(_param0 context.Context, _param1 *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error) {
-	ret := _m.ctrl.Call(_m, "ReceiveLinkUpdateMessage", _param0, _param1)
+func (_m *MockClient) ReceiveLinkUpdateMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error) {
+	ret := _m.ctrl.Call(_m, "ReceiveLinkUpdateMessage", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.Response)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) ReceiveLinkUpdateMessage(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveLinkUpdateMessage", arg0, arg1)
+func (_mr *_MockClientRecorder) ReceiveLinkUpdateMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveLinkUpdateMessage", arg0, arg1, arg2)
 }
 
-func (_m *MockClient) ReceiveProbe(_param0 context.Context, _param1 *remoting.ProbeMessage) (*remoting.ProbeResponse, error) {
-	ret := _m.ctrl.Call(_m, "ReceiveProbe", _param0, _param1)
+func (_m *MockClient) ReceiveProbe(_param0 context.Context, _param1 node.Addr, _param2 *remoting.ProbeMessage) (*remoting.ProbeResponse, error) {
+	ret := _m.ctrl.Call(_m, "ReceiveProbe", _param0, _param1, _param2)
 	ret0, _ := ret[0].(*remoting.ProbeResponse)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-func (_mr *_MockClientRecorder) ReceiveProbe(arg0, arg1 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveProbe", arg0, arg1)
+func (_mr *_MockClientRecorder) ReceiveProbe(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "ReceiveProbe", arg0, arg1, arg2)
 }
 
 func (_m *MockClient) UpdateLongLivedConnections(_param0 []node.Addr) {

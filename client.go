@@ -9,11 +9,11 @@ import (
 
 // Client for doing RPC
 type Client interface {
-	ReceiveJoinMessage(ctx context.Context, in *remoting.JoinMessage) (*remoting.JoinResponse, error)
-	ReceiveJoinPhase2Message(ctx context.Context, in *remoting.JoinMessage) (*remoting.JoinResponse, error)
-	ReceiveLinkUpdateMessage(ctx context.Context, in *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error)
-	ReceiveConsensusProposal(ctx context.Context, in *remoting.ConsensusProposal) (*remoting.ConsensusProposalResponse, error)
-	Gossip(ctx context.Context, in *remoting.GossipMessage) (*remoting.GossipResponse, error)
-	ReceiveProbe(ctx context.Context, in *remoting.ProbeMessage) (*remoting.ProbeResponse, error)
+	ReceiveJoinMessage(ctx context.Context, target node.Addr, in *remoting.JoinMessage) (*remoting.JoinResponse, error)
+	ReceiveJoinPhase2Message(ctx context.Context, target node.Addr, in *remoting.JoinMessage) (*remoting.JoinResponse, error)
+	ReceiveLinkUpdateMessage(ctx context.Context, target node.Addr, in *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error)
+	ReceiveConsensusProposal(ctx context.Context, target node.Addr, in *remoting.ConsensusProposal) (*remoting.ConsensusProposalResponse, error)
+	Gossip(ctx context.Context, target node.Addr, in *remoting.GossipMessage) (*remoting.GossipResponse, error)
+	ReceiveProbe(ctx context.Context, target node.Addr, in *remoting.ProbeMessage) (*remoting.ProbeResponse, error)
 	UpdateLongLivedConnections([]node.Addr)
 }

@@ -396,8 +396,8 @@ func TestNotEqual(t *testing.T) {
 	}
 	funcA := func() int { return 23 }
 	funcB := func() int { return 42 }
-	if !NotEqual(mockT, funcA, funcB) {
-		t.Error("NotEqual should return true")
+	if NotEqual(mockT, funcA, funcB) {
+		t.Error("NotEqual should return false")
 	}
 
 	if NotEqual(mockT, "Hello World", "Hello World") {
@@ -690,7 +690,7 @@ func TestNoError(t *testing.T) {
 	}()
 
 	if err == nil { // err is not nil here!
-		t.Error("Error should be nil due to empty interface", err)
+		t.Errorf("Error should be nil due to empty interface: %s", err)
 	}
 
 	False(t, NoError(mockT, err), "NoError should fail with empty error interface")
@@ -714,6 +714,9 @@ func TestError(t *testing.T) {
 
 	True(t, Error(mockT, err), "Error with error should return True")
 
+	// go vet check
+	True(t, Errorf(mockT, err, "example with %s", "formatted message"), "Errorf with error should rturn True")
+
 	// returning an empty error interface
 	err = func() error {
 		var err *customError
@@ -724,7 +727,7 @@ func TestError(t *testing.T) {
 	}()
 
 	if err == nil { // err is not nil here!
-		t.Error("Error should be nil due to empty interface", err)
+		t.Errorf("Error should be nil due to empty interface: %s", err)
 	}
 
 	True(t, Error(mockT, err), "Error should pass with empty error interface")
@@ -1371,4 +1374,9 @@ func BenchmarkBytesEqual(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		Equal(mockT, s, s2)
 	}
+}
+
+func TestEqualArgsValidation(t *testing.T) {
+	err := validateEqualArgs(time.Now, time.Now)
+	EqualError(t, err, "cannot take func type as argument")
 }

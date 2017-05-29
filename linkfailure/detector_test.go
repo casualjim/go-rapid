@@ -213,8 +213,9 @@ func TestDetector_PingPong_Bootstrapped(t *testing.T) {
 	defer ctrl.Finish()
 
 	mockClient := mocks.NewMockClient(ctrl)
+	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	ctx := context.TODO()
-	mockClient.EXPECT().ReceiveProbe(ctx, gomock.Any()).Return(new(remoting.ProbeResponse), nil)
+	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(new(remoting.ProbeResponse), nil)
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -222,7 +223,6 @@ func TestDetector_PingPong_Bootstrapped(t *testing.T) {
 		Log:    log.New(os.Stderr, "[rapid] ", 0),
 	})
 
-	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	ppd := pp.(*pingPongDetector)
 	ppd.failureCount.data[mee] = &counter{val: 0}
 
@@ -235,7 +235,8 @@ func TestDetector_PingPong_Failed(t *testing.T) {
 
 	mockClient := mocks.NewMockClient(ctrl)
 	ctx := context.TODO()
-	mockClient.EXPECT().ReceiveProbe(ctx, gomock.Any()).Return(nil, errors.New("failed"))
+	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
+	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(nil, errors.New("failed"))
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -243,7 +244,6 @@ func TestDetector_PingPong_Failed(t *testing.T) {
 		Log:    log.New(os.Stderr, "[rapid] ", 0),
 	})
 
-	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	ppd := pp.(*pingPongDetector)
 	ppd.failureCount.data[mee] = &counter{val: 0}
 
@@ -257,8 +257,9 @@ func TestDetector_PingPong_Bootstrapping(t *testing.T) {
 
 	mockClient := mocks.NewMockClient(ctrl)
 	ctx := context.TODO()
+	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	bsr := &remoting.ProbeResponse{Status: remoting.NodeStatus_BOOTSTRAPPING}
-	mockClient.EXPECT().ReceiveProbe(ctx, gomock.Any()).Return(bsr, nil).Times(bootstrapCountThreshold + 1)
+	mockClient.EXPECT().ReceiveProbe(ctx, mee, gomock.Any()).Return(bsr, nil).Times(bootstrapCountThreshold + 1)
 
 	pp := PingPongDetector(PingPongOpts{
 		Addr:   node.Addr{Host: "127.0.0.1", Port: 1234},
@@ -266,7 +267,6 @@ func TestDetector_PingPong_Bootstrapping(t *testing.T) {
 		Log:    log.New(os.Stderr, "[rapid] ", 0),
 	})
 
-	mee := node.Addr{Host: "127.0.0.1", Port: 2222}
 	ppd := pp.(*pingPongDetector)
 	ppd.failureCount.data[mee] = &counter{val: 0}
 

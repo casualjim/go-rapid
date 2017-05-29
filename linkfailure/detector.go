@@ -200,7 +200,7 @@ func (p *pingPongDetector) CheckMonitoree(context context.Context, addr node.Add
 	}
 
 	msg := messagePool.Get(addr)
-	resp, err := p.client.ReceiveProbe(context, msg)
+	resp, err := p.client.ReceiveProbe(context, addr, msg)
 	messagePool.Put(msg)
 	if err != nil {
 		p.log.Printf("check monitoree self=%s node=%s status=down", p.addr, addr)

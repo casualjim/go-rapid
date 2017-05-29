@@ -53,7 +53,7 @@
   branch = "master"
   name = "github.com/stretchr/testify"
   packages = ["assert","require"]
-  revision = "b8c9b4ef3dade3a13f662c95942dcda39e962cd4"
+  revision = "46b3c8225b20f01377eeefe3e6b7b147bb742eff"
 
 [[projects]]
   branch = "master"
