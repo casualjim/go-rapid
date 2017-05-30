@@ -1,9 +1,8 @@
-package watermark
+package membership
 
 import (
 	"testing"
 
-	"github.com/casualjim/go-rapid/membership"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/pborman/uuid"
@@ -19,7 +18,7 @@ const (
 )
 
 func TestWatermark_Sanity(t *testing.T) {
-	b := New(k, h, l)
+	b := NewWatermarkBuffer(k, h, l)
 	dst := node.Addr{Host: "127.0.0.2", Port: 2}
 
 	var ret []node.Addr
@@ -52,7 +51,7 @@ func TestWatermark_Sanity(t *testing.T) {
 }
 
 func TestWatermark_BlockingOneBlocker(t *testing.T) {
-	wb := New(k, h, l)
+	wb := NewWatermarkBuffer(k, h, l)
 	dst1 := node.Addr{Host: "127.0.0.2", Port: 2}
 	dst2 := node.Addr{Host: "127.0.0.3", Port: 2}
 	var ret []node.Addr
@@ -112,7 +111,7 @@ func TestWatermark_BlockingOneBlocker(t *testing.T) {
 }
 
 func TestWatermark_BlockingThreeBlockers(t *testing.T) {
-	wb := New(k, h, l)
+	wb := NewWatermarkBuffer(k, h, l)
 	dst1 := node.Addr{Host: "127.0.0.2", Port: 2}
 	dst2 := node.Addr{Host: "127.0.0.3", Port: 2}
 	dst3 := node.Addr{Host: "127.0.0.4", Port: 2}
@@ -199,7 +198,7 @@ func TestWatermark_BlockingThreeBlockers(t *testing.T) {
 }
 
 func TestWatermark_MultipleBlockersPastH(t *testing.T) {
-	wb := New(k, h, l)
+	wb := NewWatermarkBuffer(k, h, l)
 	dst1 := node.Addr{Host: "127.0.0.2", Port: 2}
 	dst2 := node.Addr{Host: "127.0.0.3", Port: 2}
 	dst3 := node.Addr{Host: "127.0.0.4", Port: 2}
@@ -302,7 +301,7 @@ func TestWatermark_MultipleBlockersPastH(t *testing.T) {
 }
 
 func TestWatermark_BelowL(t *testing.T) {
-	wb := New(k, h, l)
+	wb := NewWatermarkBuffer(k, h, l)
 	dst1 := node.Addr{Host: "127.0.0.2", Port: 2}
 	dst2 := node.Addr{Host: "127.0.0.3", Port: 2}
 	dst3 := node.Addr{Host: "127.0.0.4", Port: 2}
@@ -378,7 +377,7 @@ func TestWatermark_BelowL(t *testing.T) {
 }
 
 func TestWatermark_Batch(t *testing.T) {
-	wb := New(k, h, l)
+	wb := NewWatermarkBuffer(k, h, l)
 	const numNodes = 3
 
 	var hostAndPorts []node.Addr
@@ -401,8 +400,8 @@ func TestWatermark_Batch(t *testing.T) {
 }
 
 func TestWatermark_InvalidateFailingLinks(t *testing.T) {
-	vw := membership.NewView(k, nil, nil)
-	wb := New(k, h, l)
+	vw := NewView(k, nil, nil)
+	wb := NewWatermarkBuffer(k, h, l)
 	const numNodes = 30
 	var hosts []node.Addr
 	for i := 0; i < numNodes; i++ {

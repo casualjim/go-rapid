@@ -16,7 +16,7 @@ check: goversion checkfmt ## Runs static code analysis checks
 .PHONY: test
 test: ## Runs tests in all packages
 	@echo running tests...
-	@(go test $$(go list ./... | grep -v vendor))
+	@(go test -race $$(go list ./... | grep -v vendor))
 
 .PHONY: update-deps
 update-deps: ## Updates the dependencies with flattened vendor and without test files

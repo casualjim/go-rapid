@@ -11,20 +11,6 @@ import (
 	"github.com/OneOfOne/xxhash"
 )
 
-// ClusterEvent to subscribe from the cluster
-type ClusterEvent uint8
-
-const (
-	// ClusterEventViewChangeProposal triggered when a node announces a proposal using the watermark detection.
-	ClusterEventViewChangeProposal ClusterEvent = iota
-	// ClusterEventViewChange triggered when a fast-paxos quorum of identical proposals were received.
-	ClusterEventViewChange
-	// ClusterEventViewChangeOneStepFailed triggered when a fast-paxos quorum of identical proposals is unavailable.
-	ClusterEventViewChangeOneStepFailed
-	// ClusterEventKicked triggered when a node detects that it has been removed from the network.
-	ClusterEventKicked
-)
-
 // ParseAddr to host and port number, the addr string can be in the form address:port_number of address:port_name
 func ParseAddr(addr string) (Addr, error) {
 	h, p, err := net.SplitHostPort(addr)
@@ -102,15 +88,4 @@ func (h Addr) Hashcode() int64 {
 	endianness.PutUint32(prt, uint32(h.Port))
 	hcp := xxhash.Checksum64(prt)
 	return int64(hch*31 + hcp)
-}
-
-// A StatusChange event. It is the format used to inform applications about cluster view change events.
-type StatusChange struct {
-	Addr     Addr
-	Status   string
-	Metadata map[string]string
-}
-
-func (n StatusChange) String() string {
-	return fmt.Sprintf("%s:%s:%+v", n.Addr, n.Status, n.Metadata)
 }

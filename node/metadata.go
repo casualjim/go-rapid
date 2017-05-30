@@ -2,21 +2,30 @@ package node
 
 import "errors"
 
-// Metadata per-node metadata which is immutable.
+// MetadataRegistry per-node metadata which is immutable.
 // These are simple tags like roles or other configuration parameters.
-type Metadata struct {
+type MetadataRegistry struct {
 	table map[Addr]map[string]string
 }
 
-// NewMetadata creates a new initialized Metadata object
-func NewMetadata() *Metadata {
-	return &Metadata{
+// NewMetadataRegistry creates a new initialized Metadata object
+func NewMetadataRegistry() *MetadataRegistry {
+	return &MetadataRegistry{
 		table: make(map[Addr]map[string]string, 150),
 	}
 }
 
+// All the metadata known
+func (m *MetadataRegistry) All() map[string]map[string]string {
+	result := make(map[string]map[string]string, len(m.table))
+	for k, v := range m.table {
+		result[k.String()] = v
+	}
+	return result
+}
+
 // Get the metadata for the specified node
-func (m *Metadata) Get(node Addr) (map[string]string, bool, error) {
+func (m *MetadataRegistry) Get(node Addr) (map[string]string, bool, error) {
 	if node.Host == "" {
 		return nil, false, errors.New("node metadata get: node host and port values are required")
 	}
@@ -34,7 +43,7 @@ func (m *Metadata) Get(node Addr) (map[string]string, bool, error) {
 }
 
 // Add the metadata for a node
-func (m *Metadata) Add(node Addr, data map[string]string) (bool, error) {
+func (m *MetadataRegistry) Add(node Addr, data map[string]string) (bool, error) {
 	if node.Host == "" {
 		return false, errors.New("node metadata set: node host and port values are required")
 	}
@@ -56,7 +65,7 @@ func (m *Metadata) Add(node Addr, data map[string]string) (bool, error) {
 }
 
 // Del the metadata for a node
-func (m *Metadata) Del(node Addr) error {
+func (m *MetadataRegistry) Del(node Addr) error {
 	if node.Host == "" {
 		return errors.New("node metadata del: node host and port values are required")
 	}

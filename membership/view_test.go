@@ -9,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	k = 10
-)
-
 func TestView_AddOneRing(t *testing.T) {
 	vw := NewView(k, nil, nil)
 	addr := node.Addr{Host: "127.0.0.1", Port: 123}

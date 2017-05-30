@@ -1,17 +1,16 @@
-package watermark
+package membership
 
 import (
 	"errors"
 	"fmt"
 
-	"github.com/casualjim/go-rapid/membership"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 )
 
-// New watermark buffer
-func New(k, h, l int) *Buffer {
-	return &Buffer{
+// NewWatermarkBuffer watermark buffer
+func NewWatermarkBuffer(k, h, l int) *WatermarkBuffer {
+	return &WatermarkBuffer{
 		k:              k,
 		h:              h,
 		l:              l,
@@ -20,8 +19,8 @@ func New(k, h, l int) *Buffer {
 	}
 }
 
-// The Buffer for deciding if a node is considered down
-type Buffer struct {
+// The WatermarkBuffer for deciding if a node is considered down
+type WatermarkBuffer struct {
 	k, h, l           int
 	proposalCount     int
 	updatesInProgress int
@@ -32,12 +31,12 @@ type Buffer struct {
 }
 
 // KnownProposals for this buffer
-func (b *Buffer) KnownProposals() int {
+func (b *WatermarkBuffer) KnownProposals() int {
 	return b.proposalCount
 }
 
 // Clear all view change reports being tracked. To be used right after a view change
-func (b *Buffer) Clear() {
+func (b *WatermarkBuffer) Clear() {
 	for k := range b.reportsPerHost {
 		delete(b.reportsPerHost, k)
 	}
@@ -54,7 +53,7 @@ func (b *Buffer) Clear() {
 // AggregateForProposal applies a LinkUpdateMessage against the Watermark filter. When an update moves a host
 // past the H threshold of reports, and no other host has between H and L reports, the
 // method returns a view change proposal.
-func (b *Buffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]node.Addr, error) {
+func (b *WatermarkBuffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]node.Addr, error) {
 	if msg == nil {
 		return nil, errors.New("watermark aggregate: expected msg to not be nil")
 	}
@@ -76,7 +75,7 @@ func (b *Buffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]node.A
 	return b.aggregateForProposal(lnkSrc, lnkDst, msg.GetRingNumber(), msg.GetLinkStatus()), nil
 }
 
-func (b *Buffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32, status remoting.LinkStatus) []node.Addr {
+func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32, status remoting.LinkStatus) []node.Addr {
 
 	if status == remoting.LinkStatus_DOWN {
 		b.seenLinkDown = true
@@ -96,7 +95,7 @@ func (b *Buffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32
 	return b.calculateAggregate(len(reportsForHost), lnkDst)
 }
 
-func (b *Buffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []node.Addr {
+func (b *WatermarkBuffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []node.Addr {
 	if numReportsForHost == b.l {
 		b.updatesInProgress++
 		b.preProposal[lnkDst] = struct{}{}
@@ -120,7 +119,7 @@ func (b *Buffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []n
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *Buffer) InvalidateFailingLinks(view *membership.View) ([]node.Addr, error) {
+func (b *WatermarkBuffer) InvalidateFailingLinks(view *View) ([]node.Addr, error) {
 	if !b.seenLinkDown {
 		return nil, nil
 	}
@@ -146,7 +145,7 @@ func hasPreproposal(addrs map[node.Addr]struct{}, addr node.Addr) bool {
 
 func hasProposal(addrs []node.Addr, addr node.Addr) bool {
 	for _, candidate := range addrs {
-		if candidate.Host == addr.Host && candidate.Port == addr.Port {
+		if candidate == addr {
 			return true
 		}
 	}

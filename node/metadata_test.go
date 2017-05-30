@@ -8,7 +8,7 @@ import (
 )
 
 func TestMetadata_Get_ErrorMissingHost(t *testing.T) {
-	md := NewMetadata()
+	md := NewMetadataRegistry()
 
 	_, _, err := md.Get(Addr{})
 	assert.Error(t, err)
@@ -18,7 +18,7 @@ func TestMetadata_Get_Success(t *testing.T) {
 	addr := Addr{Host: "127.0.0.1", Port: 9493}
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
@@ -36,7 +36,7 @@ func TestMetadata_Get_Immutable(t *testing.T) {
 	addr := Addr{Host: "127.0.0.1", Port: 9493}
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
@@ -52,7 +52,7 @@ func TestMetadata_Get_Immutable(t *testing.T) {
 }
 
 func TestMetadata_Add_Errors(t *testing.T) {
-	md := NewMetadata()
+	md := NewMetadataRegistry()
 
 	_, err := md.Add(Addr{}, map[string]string{})
 	require.Error(t, err)
@@ -65,7 +65,7 @@ func TestMetadata_Add_Success(t *testing.T) {
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
@@ -83,7 +83,7 @@ func TestMetadata_Add_IgnoreRepeated(t *testing.T) {
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
@@ -102,7 +102,7 @@ func TestMetadata_Add_Immutable(t *testing.T) {
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
@@ -120,7 +120,7 @@ func TestMetadata_Add_Immutable(t *testing.T) {
 }
 
 func TestMetadata_Del_Errors(t *testing.T) {
-	md := NewMetadata()
+	md := NewMetadataRegistry()
 
 	err := md.Del(Addr{})
 	assert.Error(t, err)
@@ -130,7 +130,7 @@ func TestMetadata_Del_Success(t *testing.T) {
 	addr := Addr{Host: "127.0.0.1", Port: 9493}
 	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
 
-	md := &Metadata{
+	md := &MetadataRegistry{
 		table: map[Addr]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
