@@ -5,7 +5,7 @@
   branch = "master"
   name = "github.com/OneOfOne/xxhash"
   packages = ["."]
-  revision = "5d8fefa50c365d4c191b4549a0a96b8261ae7270"
+  revision = "9f129ced0523605cdde14a954ae4609e366a7998"
 
 [[projects]]
   name = "github.com/davecgh/go-spew"
@@ -23,25 +23,25 @@
   branch = "master"
   name = "github.com/gogo/protobuf"
   packages = ["proto"]
-  revision = "9df9efe4c742f1a2bfdedf1c3b6902fc6e814c6b"
+  revision = "f7a910660376f32540c32f398cce5c85081f62c6"
 
 [[projects]]
   branch = "master"
   name = "github.com/golang/mock"
   packages = ["gomock"]
-  revision = "bd3c8e81be01eef76d4b503f5e687d2d1354d2d9"
+  revision = "93f6609a15b7de76bd49259f1f9a6b58df358936"
 
 [[projects]]
   branch = "master"
   name = "github.com/golang/protobuf"
   packages = ["proto","ptypes/any"]
-  revision = "9f174c986221c608fb5143bd623b6076a71feae3"
+  revision = "6a1fa9404c0aebf36c879bc50152edcc953910d2"
 
 [[projects]]
   branch = "master"
   name = "github.com/pborman/uuid"
   packages = ["."]
-  revision = "1b00554d822231195d1babd97ff4a781231955c9"
+  revision = "e790cca94e6cc75c7064b1332e63811d4aae1a53"
 
 [[projects]]
   name = "github.com/pmezard/go-difflib"
@@ -53,31 +53,31 @@
   branch = "master"
   name = "github.com/stretchr/testify"
   packages = ["assert","require"]
-  revision = "46b3c8225b20f01377eeefe3e6b7b147bb742eff"
+  revision = "f6abca593680b2315d2075e0f5e2a9751e3f431a"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
   packages = ["context","http2","http2/hpack","idna","internal/timeseries","lex/httplex","trace"]
-  revision = "48359f4f600b3a2d5cf657458e3f940021631a56"
+  revision = "1f9224279e98554b6a6432d4dd998a739f8b2b7c"
 
 [[projects]]
   branch = "master"
   name = "golang.org/x/text"
   packages = ["internal/gen","internal/triegen","internal/ucd","secure/bidirule","transform","unicode/bidi","unicode/cldr","unicode/norm","unicode/rangetable"]
-  revision = "19e51611da83d6be54ddafce4a4af510cb3e9ea4"
+  revision = "2bf8f2a19ec09c670e931282edfe6567f6be21c9"
 
 [[projects]]
   branch = "master"
   name = "google.golang.org/genproto"
   packages = ["googleapis/rpc/status"]
-  revision = "d80a6e20e776b0b17a324d0ba1ab50a39c8e8944"
+  revision = "aa2eb687b4d3e17154372564ad8d6bf11c3cf21f"
 
 [[projects]]
   branch = "master"
   name = "google.golang.org/grpc"
   packages = [".","codes","credentials","grpclb/grpc_lb_v1","grpclog","internal","keepalive","metadata","naming","peer","stats","status","tap","transport"]
-  revision = "2739967807cc0e3199513569f58fda34252ad65e"
+  revision = "3c33c26290b747350f8650c7d38bcc51b42dc785"
 
 [solve-meta]
   analyzer-name = "dep"
