@@ -463,6 +463,6 @@ func createLinkUpdateMessage(src, dst node.Addr, status remoting.LinkStatus, rin
 		LinkDst:         dst.String(),
 		LinkStatus:      status,
 		ConfigurationId: configurationID,
-		RingNumber:      ringNumber,
+		RingNumber:      []int32{ringNumber},
 	}
 }

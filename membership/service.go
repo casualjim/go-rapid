@@ -128,10 +128,11 @@ func (d *defaultService) OnLinkFailed(monitoree node.Addr) {
 			LinkStatus:      remoting.LinkStatus_DOWN,
 			ConfigurationId: cfgID,
 		}
+
 		for _, ringID := range rn {
-			msg.RingNumber = int32(ringID)
-			d.batchScheduler.Enqueue(msg)
+			msg.RingNumber = append(msg.RingNumber, int32(ringID))
 		}
+		d.batchScheduler.Enqueue(msg)
 	}()
 }
 

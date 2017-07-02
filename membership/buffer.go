@@ -58,10 +58,6 @@ func (b *WatermarkBuffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) 
 		return nil, errors.New("watermark aggregate: expected msg to not be nil")
 	}
 
-	if msg.GetRingNumber() > int32(b.k) {
-		return nil, errors.New("watermark aggregate: ring number should be less or equal to the number of nodes")
-	}
-
 	lnkSrc, err := node.ParseAddr(msg.GetLinkSrc())
 	if err != nil {
 		return nil, fmt.Errorf("watermark aggregate link src: %v", err)
@@ -72,7 +68,14 @@ func (b *WatermarkBuffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) 
 		return nil, fmt.Errorf("watermark aggregate link dst: %v", err)
 	}
 
-	return b.aggregateForProposal(lnkSrc, lnkDst, msg.GetRingNumber(), msg.GetLinkStatus()), nil
+	var proposals []node.Addr
+	for _, rn := range msg.GetRingNumber() {
+		proposals = append(proposals,
+			b.aggregateForProposal(lnkSrc, lnkDst, rn, msg.GetLinkStatus())...,
+		)
+	}
+
+	return proposals, nil
 }
 
 func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32, status remoting.LinkStatus) []node.Addr {

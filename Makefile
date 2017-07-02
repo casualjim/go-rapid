@@ -34,7 +34,7 @@ checkfmt: ## Checks code format
 
 .PHONY: fmt
 fmt: ## format go code
-	goimports -v -w $$(find . -name '*.go' -not -path './vendor/*')
+	goimports -w $$(find . -name '*.go' -not -path './vendor/*')
 
 .PHONY: distclean
 distclean: ## Clean ALL files including ignored ones
@@ -54,17 +54,17 @@ go-generate: ## run go generate
 .PHONY: devtools
 devtools: ## install necessary tools for development
 	@echo installing golang dep tools
-	@go get -u github.com/golang/dep/cmd/dep
+	go get -u github.com/golang/dep/cmd/dep
 	@echo installing grpc
-	@go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
-	@go get -u google.golang.org/grpc
-	@go get -u github.com/gogo/protobuf/protoc-gen-gofast
-	@go get -u github.com/gogo/protobuf/protoc-gen-gogofast
+	go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
+	go get -u google.golang.org/grpc
+	go get -u github.com/gogo/protobuf/protoc-gen-gofast
+	go get -u github.com/gogo/protobuf/protoc-gen-gogofast
 	@echo installing mockgen
-	@go get github.com/golang/mock/mockgen
+	go get github.com/golang/mock/mockgen
 	@echo installing metalinter
-	@go get -u github.com/alecthomas/gometalinter
-	@gometalinter --install --update
+	go get -u github.com/alecthomas/gometalinter
+	gometalinter --install --update
 
 .PHONY: help
 help: ## Display make help
