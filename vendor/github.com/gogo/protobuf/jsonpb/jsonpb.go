@@ -204,6 +204,11 @@ func (m *Marshaler) marshalObject(out *errWriter, v proto.Message, indent, typeU
 			continue
 		}
 
+		//this is not a protobuf field
+		if valueField.Tag.Get("protobuf") == "" && valueField.Tag.Get("protobuf_oneof") == "" {
+			continue
+		}
+
 		// IsNil will panic on most value kinds.
 		switch value.Kind() {
 		case reflect.Chan, reflect.Func, reflect.Interface:
@@ -899,7 +904,7 @@ func (u *Unmarshaler) unmarshalValue(target reflect.Value, inputValue json.RawMe
 
 	// Handle nested messages.
 	if targetType.Kind() == reflect.Struct {
-		if target.CanAddr() {
+		if prop != nil && len(prop.CustomType) > 0 && target.CanAddr() {
 			if m, ok := target.Addr().Interface().(interface {
 				UnmarshalJSON([]byte) error
 			}); ok {
