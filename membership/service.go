@@ -9,7 +9,6 @@ import (
 	"github.com/casualjim/go-rapid/linkfailure"
 	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/pborman/uuid"
 )
 
 // A StatusChange event. It is the format used to inform applications about cluster view change events.
@@ -141,8 +140,8 @@ func (d *defaultService) HandleJoinMessage(msg *remoting.JoinMessage) (*remoting
 	if err != nil {
 		return nil, fmt.Errorf("handle join: %v", err)
 	}
-	id := uuid.Parse(msg.GetUuid())
-	status := d.Membership.IsSafeToJoin(joiningHost, id)
+	id := msg.GetNodeId()
+	status := d.Membership.IsSafeToJoin(joiningHost, *id)
 
 	resp := &remoting.JoinResponse{
 		Sender:          d.Addr.String(),

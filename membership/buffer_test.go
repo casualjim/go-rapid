@@ -407,7 +407,7 @@ func TestWatermark_InvalidateFailingLinks(t *testing.T) {
 	for i := 0; i < numNodes; i++ {
 		n := node.Addr{Host: "127.0.0.2", Port: int32(2 + i)}
 		hosts = append(hosts, n)
-		require.NoError(t, vw.RingAdd(n, uuid.NewRandom()))
+		require.NoError(t, vw.RingAdd(n, nodeIDFromUUID(uuid.NewRandom())))
 	}
 
 	dst := hosts[0]

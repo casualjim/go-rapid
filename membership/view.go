@@ -1,7 +1,7 @@
 package membership
 
 import (
-	"bytes"
+	"encoding/binary"
 	"fmt"
 
 	"github.com/OneOfOne/xxhash"
@@ -30,17 +30,34 @@ func addressComparator(seed int) func(interface{}, interface{}) int {
 	}
 }
 
-func uuidComparator(left, right interface{}) int {
-	l := left.(uuid.UUID)
-	r := right.(uuid.UUID)
-	return bytes.Compare(l, r)
+func nodeIDComparator(left, right interface{}) int {
+	l := left.(remoting.NodeId)
+	r := right.(remoting.NodeId)
+
+	// first comepare high bits
+	if l.GetHigh() < r.GetHigh() {
+		return -1
+	}
+	if l.GetHigh() > r.GetHigh() {
+		return 1
+	}
+
+	// high bits are equal, try the low bits
+	if l.GetLow() < r.GetLow() {
+		return -1
+	}
+	if l.GetLow() > r.GetLow() {
+		return 1
+	}
+	// ids are equal
+	return 0
 }
 
 // NewView creates a new view
-func NewView(k int, uuids []uuid.UUID, nodeAddrs []node.Addr) *View {
-	seenIdentifiers := treeset.NewWith(uuidComparator)
-	for _, uuid := range uuids {
-		seenIdentifiers.Add(uuid)
+func NewView(k int, nodeIDs []remoting.NodeId, nodeAddrs []node.Addr) *View {
+	seenIdentifiers := treeset.NewWith(nodeIDComparator)
+	for _, nodeID := range nodeIDs {
+		seenIdentifiers.Add(nodeID)
 	}
 
 	rings := make(map[int]*treeset.Set, k)
@@ -92,7 +109,7 @@ func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
 }
 
 // IsSafeToJoin queries if a host with a logical identifier is safe to add to the network.
-func (v *View) IsSafeToJoin(addr node.Addr, id uuid.UUID) remoting.JoinStatusCode {
+func (v *View) IsSafeToJoin(addr node.Addr, id remoting.NodeId) remoting.JoinStatusCode {
 	if v.IsKnownMember(addr) {
 		return remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING
 	}
@@ -103,9 +120,9 @@ func (v *View) IsSafeToJoin(addr node.Addr, id uuid.UUID) remoting.JoinStatusCod
 }
 
 // RingAdd a node to all K rings and records its unique identifier
-func (v *View) RingAdd(addr node.Addr, id uuid.UUID) error {
+func (v *View) RingAdd(addr node.Addr, id remoting.NodeId) error {
 	if v.IsKnownIdentifier(id) {
-		return fmt.Errorf("host add attempt with identifier already seen: {host: %s, identifier: %s}", addr, id)
+		return fmt.Errorf("host add attempt with identifier already seen: {host: %s, identifier: %v}", addr, id)
 	}
 	if v.IsKnownMember(addr) {
 		return &NodeAlreadInRingError{Node: addr}
@@ -136,7 +153,7 @@ func (v *View) Size() int {
 }
 
 // IsKnownIdentifier returns whether an identifier has been used by a node already or not
-func (v *View) IsKnownIdentifier(id uuid.UUID) bool {
+func (v *View) IsKnownIdentifier(id remoting.NodeId) bool {
 	return v.identifiersSeen.Contains(id)
 }
 
@@ -288,37 +305,56 @@ func (v *View) Configuration() *Configuration {
 }
 
 func configurationIDFromTreeset(identifiers, nodes *treeset.Set) int64 {
-	hash := int64(1)
-	iiter := identifiers.Iterator()
-	for iiter.Next() {
-		hash = hash*37 + int64(xxhash.Checksum32(iiter.Value().(uuid.UUID)))
-	}
+	var hash uint64 = 1
 
-	niter := nodes.Iterator()
-	for niter.Next() {
-		hash = hash*37 + niter.Value().(node.Addr).Hashcode()
-	}
-	return hash
+	identifiers.Each(func(i int, v interface{}) {
+		id := v.(remoting.NodeId)
+		lb := make([]byte, 8)
+		hb := make([]byte, 8)
+		binary.BigEndian.PutUint64(hb, uint64(id.GetHigh()))
+		binary.BigEndian.PutUint64(lb, uint64(id.GetLow()))
+
+		hash = hash*37 + xxhash.Checksum64(hb)
+		hash = hash*37 + xxhash.Checksum64(lb)
+	})
+
+	nodes.Each(func(i int, v interface{}) {
+		addr := v.(node.Addr)
+		prt := make([]byte, 4)
+		binary.BigEndian.PutUint32(prt, uint32(addr.Port))
+
+		hash = hash*37 + xxhash.ChecksumString64(addr.Host)
+		hash = hash*37 + xxhash.Checksum64(prt)
+	})
+	return int64(hash)
 }
 
 // NewConfiguration initializes a new configuration object from identifiers and nodes
 func NewConfiguration(identifiers, nodes *treeset.Set) *Configuration {
-	idfs := make([]uuid.UUID, identifiers.Size())
-	hash := int64(1)
+	idfs := make([]remoting.NodeId, identifiers.Size())
+	var hash uint64 = 1
 	identifiers.Each(func(i int, v interface{}) {
-		idfs[i] = v.(uuid.UUID)
-		hash = hash*37 + int64(xxhash.Checksum32(idfs[i]))
+		idfs[i] = v.(remoting.NodeId)
+		lb := make([]byte, 8)
+		hb := make([]byte, 8)
+		binary.BigEndian.PutUint64(hb, uint64(idfs[i].GetHigh()))
+		binary.BigEndian.PutUint64(lb, uint64(idfs[i].GetLow()))
+		hash = hash*37 + xxhash.Checksum64(hb)
+		hash = hash*37 + xxhash.Checksum64(lb)
 	})
 	nds := make([]node.Addr, nodes.Size())
 	nodes.Each(func(i int, v interface{}) {
 		nds[i] = v.(node.Addr)
-		hash = hash*37 + nds[i].Hashcode()
+		hash = hash*37 + xxhash.ChecksumString64(nds[i].Host)
+		prt := make([]byte, 4)
+		binary.BigEndian.PutUint32(prt, uint32(nds[i].Port))
+		hash = hash*37 + xxhash.Checksum64(prt)
 	})
 
 	return &Configuration{
 		Identifiers: idfs,
 		Nodes:       nds,
-		ConfigID:    hash,
+		ConfigID:    int64(hash),
 	}
 }
 
@@ -326,7 +362,7 @@ func NewConfiguration(identifiers, nodes *treeset.Set) *Configuration {
 // An instance of this object created from one MembershipView object contains the necessary information
 // to bootstrap an identical membership.View object.
 type Configuration struct {
-	Identifiers []uuid.UUID
+	Identifiers []remoting.NodeId
 	Nodes       []node.Addr
 	ConfigID    int64
 }
@@ -347,4 +383,18 @@ type NodeNotInRingError struct {
 
 func (n *NodeNotInRingError) Error() string {
 	return fmt.Sprintf("node not in ring: %s", n.Node)
+}
+
+func nodeIDFromUUID(uid uuid.UUID) remoting.NodeId {
+	var lsb, msb uint64
+	for i := 0; i < 8; i++ {
+		msb = (msb << 8) | (uint64(uid[i]) & 0xff)
+	}
+	for i := 8; i < 16; i++ {
+		lsb = (lsb << 8) | (uint64(uid[i]) & 0xff)
+	}
+	return remoting.NodeId{
+		High: int64(msb),
+		Low:  int64(lsb),
+	}
 }

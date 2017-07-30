@@ -127,13 +127,11 @@ func TestDetectorRunner_UpdateMembership(t *testing.T) {
 }
 
 func TestDetectorRunner_StartStop(t *testing.T) {
-	minInterval = 10 * time.Millisecond
-	defer func() { minInterval = 500 * time.Millisecond }()
-
 	r := &runner{
 		RunnerOpts: RunnerOpts{
 			Log: rapid.NOOPLogger,
 		},
+		minInterval: 10 * time.Millisecond,
 	}
 	done := make(chan struct{})
 	var count int

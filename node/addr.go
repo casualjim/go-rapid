@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 	"strings"
-	"unsafe"
 
 	"github.com/OneOfOne/xxhash"
 )
@@ -53,30 +52,11 @@ func (h Addr) String() string {
 	return strings.Join(builder, "")
 }
 
-//#nosec
-const intSize int = int(unsafe.Sizeof(0))
-
-var endianness binary.ByteOrder
-
-func init() {
-	endianness = getEndian()
-}
-
-func getEndian() binary.ByteOrder {
-	var i = 0x1
-	//#nosec
-	bs := (*[intSize]byte)(unsafe.Pointer(&i))
-	if bs[0] == 0 {
-		return binary.BigEndian
-	}
-	return binary.LittleEndian
-}
-
 // Checksum creates a hashcode with the specified seed
 func (h Addr) Checksum(seed int) int {
 	hch := xxhash.ChecksumString64S(h.Host, uint64(seed))
 	prt := make([]byte, 4)
-	endianness.PutUint32(prt, uint32(h.Port))
+	binary.BigEndian.PutUint32(prt, uint32(h.Port))
 	hcp := xxhash.Checksum64S(prt, uint64(seed))
 	return int(hch*31 + hcp)
 }
@@ -85,7 +65,7 @@ func (h Addr) Checksum(seed int) int {
 func (h Addr) Hashcode() int64 {
 	hch := xxhash.ChecksumString64(h.Host)
 	prt := make([]byte, 4)
-	endianness.PutUint32(prt, uint32(h.Port))
+	binary.BigEndian.PutUint32(prt, uint32(h.Port))
 	hcp := xxhash.Checksum64(prt)
 	return int64(hch*31 + hcp)
 }

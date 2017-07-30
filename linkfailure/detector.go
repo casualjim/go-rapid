@@ -17,13 +17,8 @@ const (
 	// Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
 	// treating that as a failure condition.
 	bootstrapCountThreshold = 30
+	minInterval             = time.Duration(500000000)
 )
-
-var minInterval time.Duration
-
-func init() {
-	minInterval = 500 * time.Millisecond
-}
 
 // The Detector interface. Objects that implement this interface can be
 // supplied to the MembershipService to perform failure detection.
@@ -52,14 +47,15 @@ type runner struct {
 	subscriptions []Subscriber
 	subscLock     *sync.Mutex
 	tick          func()
+	minInterval   time.Duration
 }
 
 func (r *runner) Start() {
 	r.stopSignal = make(chan struct{})
 	go func() {
 		iv := r.Interval
-		if iv < minInterval {
-			iv = minInterval
+		if iv < r.minInterval {
+			iv = r.minInterval
 		}
 		timer := time.NewTicker(iv)
 		for {
@@ -148,10 +144,11 @@ type Runner interface {
 // Run the specified failure detector, returns a channel that when closed is used as a stop signal
 func Run(opts RunnerOpts) Runner {
 	r := &runner{
-		RunnerOpts: opts,
-		monitorees: make(map[node.Addr]struct{}, 100),
-		lock:       &sync.Mutex{},
-		subscLock:  &sync.Mutex{},
+		RunnerOpts:  opts,
+		monitorees:  make(map[node.Addr]struct{}, 100),
+		lock:        &sync.Mutex{},
+		subscLock:   &sync.Mutex{},
+		minInterval: minInterval,
 	}
 	r.tick = r.checkMonitorees
 	r.Start()
