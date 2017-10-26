@@ -201,7 +201,7 @@ func TestDetector_PingPong_HaFailed(t *testing.T) {
 	pp.failureCount.Add(mee)
 	assert.False(t, pp.HasFailed(mee))
 
-	for i := 0; i < failureThreshold; i++ {
+	for i := int64(0); i < failureThreshold; i++ {
 		pp.failureCount.Add(mee)
 	}
 	assert.True(t, pp.HasFailed(mee))

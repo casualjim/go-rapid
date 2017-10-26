@@ -267,7 +267,7 @@ func (p *pingPongDetector) HasFailed(addr node.Addr) bool {
 	if !p.failureCount.Has(addr) {
 		p.log.Printf("HasFailed received for ghost self=%s node=%s", p.addr, addr)
 	}
-	return p.failureCount.Get(addr) >= failureThreshold
+	return int64(p.failureCount.Get(addr)) >= failureThreshold
 }
 
 func (p *pingPongDetector) HandleProbe(msg *remoting.ProbeMessage) *remoting.ProbeResponse {

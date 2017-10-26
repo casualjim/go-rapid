@@ -1,7 +1,7 @@
 # vim: ft=make
 
 GO ?= go
-GOVERSION ?= go1.8.3
+GOVERSION ?= go1.9.1
 SHELL := /bin/bash
 GIT_VERSION = $(shell git describe --tags)
 

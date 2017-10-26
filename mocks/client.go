@@ -5,7 +5,6 @@ package mocks
 
 import (
 	context "context"
-
 	node "github.com/casualjim/go-rapid/node"
 	remoting "github.com/casualjim/go-rapid/remoting"
 	gomock "github.com/golang/mock/gomock"

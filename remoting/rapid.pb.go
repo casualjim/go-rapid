@@ -9,6 +9,7 @@
 
 	It has these top-level messages:
 		NodeId
+		PreJoinMessage
 		JoinMessage
 		JoinResponse
 		BatchedLinkUpdateMessage
@@ -141,6 +142,46 @@ func (m *NodeId) GetLow() int64 {
 }
 
 // TODO: JoinMessage and JoinResponse are overloaded because they are being used for phase 1 and 2 of the bootstrap.
+type PreJoinMessage struct {
+	Sender          string  `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
+	NodeId          *NodeId `protobuf:"bytes,2,opt,name=nodeId" json:"nodeId,omitempty"`
+	RingNumber      []int32 `protobuf:"varint,3,rep,packed,name=ringNumber" json:"ringNumber,omitempty"`
+	ConfigurationId int64   `protobuf:"varint,4,opt,name=configurationId,proto3" json:"configurationId,omitempty"`
+}
+
+func (m *PreJoinMessage) Reset()                    { *m = PreJoinMessage{} }
+func (m *PreJoinMessage) String() string            { return proto.CompactTextString(m) }
+func (*PreJoinMessage) ProtoMessage()               {}
+func (*PreJoinMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{1} }
+
+func (m *PreJoinMessage) GetSender() string {
+	if m != nil {
+		return m.Sender
+	}
+	return ""
+}
+
+func (m *PreJoinMessage) GetNodeId() *NodeId {
+	if m != nil {
+		return m.NodeId
+	}
+	return nil
+}
+
+func (m *PreJoinMessage) GetRingNumber() []int32 {
+	if m != nil {
+		return m.RingNumber
+	}
+	return nil
+}
+
+func (m *PreJoinMessage) GetConfigurationId() int64 {
+	if m != nil {
+		return m.ConfigurationId
+	}
+	return 0
+}
+
 type JoinMessage struct {
 	Sender          string    `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
 	NodeId          *NodeId   `protobuf:"bytes,2,opt,name=nodeId" json:"nodeId,omitempty"`
@@ -152,7 +193,7 @@ type JoinMessage struct {
 func (m *JoinMessage) Reset()                    { *m = JoinMessage{} }
 func (m *JoinMessage) String() string            { return proto.CompactTextString(m) }
 func (*JoinMessage) ProtoMessage()               {}
-func (*JoinMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{1} }
+func (*JoinMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{2} }
 
 func (m *JoinMessage) GetSender() string {
 	if m != nil {
@@ -201,7 +242,7 @@ type JoinResponse struct {
 func (m *JoinResponse) Reset()                    { *m = JoinResponse{} }
 func (m *JoinResponse) String() string            { return proto.CompactTextString(m) }
 func (*JoinResponse) ProtoMessage()               {}
-func (*JoinResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{2} }
+func (*JoinResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{3} }
 
 func (m *JoinResponse) GetSender() string {
 	if m != nil {
@@ -253,7 +294,7 @@ type BatchedLinkUpdateMessage struct {
 func (m *BatchedLinkUpdateMessage) Reset()                    { *m = BatchedLinkUpdateMessage{} }
 func (m *BatchedLinkUpdateMessage) String() string            { return proto.CompactTextString(m) }
 func (*BatchedLinkUpdateMessage) ProtoMessage()               {}
-func (*BatchedLinkUpdateMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{3} }
+func (*BatchedLinkUpdateMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{4} }
 
 func (m *BatchedLinkUpdateMessage) GetSender() string {
 	if m != nil {
@@ -282,7 +323,7 @@ type LinkUpdateMessage struct {
 func (m *LinkUpdateMessage) Reset()                    { *m = LinkUpdateMessage{} }
 func (m *LinkUpdateMessage) String() string            { return proto.CompactTextString(m) }
 func (*LinkUpdateMessage) ProtoMessage()               {}
-func (*LinkUpdateMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{4} }
+func (*LinkUpdateMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{5} }
 
 func (m *LinkUpdateMessage) GetLinkSrc() string {
 	if m != nil {
@@ -339,7 +380,7 @@ type Response struct {
 func (m *Response) Reset()                    { *m = Response{} }
 func (m *Response) String() string            { return proto.CompactTextString(m) }
 func (*Response) ProtoMessage()               {}
-func (*Response) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{5} }
+func (*Response) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{6} }
 
 type ConsensusProposal struct {
 	Sender          string   `protobuf:"bytes,1,opt,name=sender,proto3" json:"sender,omitempty"`
@@ -350,7 +391,7 @@ type ConsensusProposal struct {
 func (m *ConsensusProposal) Reset()                    { *m = ConsensusProposal{} }
 func (m *ConsensusProposal) String() string            { return proto.CompactTextString(m) }
 func (*ConsensusProposal) ProtoMessage()               {}
-func (*ConsensusProposal) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{6} }
+func (*ConsensusProposal) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{7} }
 
 func (m *ConsensusProposal) GetSender() string {
 	if m != nil {
@@ -379,7 +420,7 @@ type ConsensusProposalResponse struct {
 func (m *ConsensusProposalResponse) Reset()                    { *m = ConsensusProposalResponse{} }
 func (m *ConsensusProposalResponse) String() string            { return proto.CompactTextString(m) }
 func (*ConsensusProposalResponse) ProtoMessage()               {}
-func (*ConsensusProposalResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{7} }
+func (*ConsensusProposalResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{8} }
 
 // ******* Node Metadata *********
 type Metadata struct {
@@ -389,7 +430,7 @@ type Metadata struct {
 func (m *Metadata) Reset()                    { *m = Metadata{} }
 func (m *Metadata) String() string            { return proto.CompactTextString(m) }
 func (*Metadata) ProtoMessage()               {}
-func (*Metadata) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{8} }
+func (*Metadata) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{9} }
 
 func (m *Metadata) GetMetadata() map[string][]byte {
 	if m != nil {
@@ -406,7 +447,7 @@ type ProbeMessage struct {
 func (m *ProbeMessage) Reset()                    { *m = ProbeMessage{} }
 func (m *ProbeMessage) String() string            { return proto.CompactTextString(m) }
 func (*ProbeMessage) ProtoMessage()               {}
-func (*ProbeMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{9} }
+func (*ProbeMessage) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{10} }
 
 func (m *ProbeMessage) GetSender() string {
 	if m != nil {
@@ -429,7 +470,7 @@ type ProbeResponse struct {
 func (m *ProbeResponse) Reset()                    { *m = ProbeResponse{} }
 func (m *ProbeResponse) String() string            { return proto.CompactTextString(m) }
 func (*ProbeResponse) ProtoMessage()               {}
-func (*ProbeResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{10} }
+func (*ProbeResponse) Descriptor() ([]byte, []int) { return fileDescriptorRapid, []int{11} }
 
 func (m *ProbeResponse) GetStatus() NodeStatus {
 	if m != nil {
@@ -440,6 +481,7 @@ func (m *ProbeResponse) GetStatus() NodeStatus {
 
 func init() {
 	proto.RegisterType((*NodeId)(nil), "remoting.NodeId")
+	proto.RegisterType((*PreJoinMessage)(nil), "remoting.PreJoinMessage")
 	proto.RegisterType((*JoinMessage)(nil), "remoting.JoinMessage")
 	proto.RegisterType((*JoinResponse)(nil), "remoting.JoinResponse")
 	proto.RegisterType((*BatchedLinkUpdateMessage)(nil), "remoting.BatchedLinkUpdateMessage")
@@ -466,7 +508,7 @@ const _ = grpc.SupportPackageIsVersion4
 // Client API for MembershipService service
 
 type MembershipServiceClient interface {
-	ReceiveJoinMessage(ctx context.Context, in *JoinMessage, opts ...grpc.CallOption) (*JoinResponse, error)
+	ReceivePreJoinMessage(ctx context.Context, in *PreJoinMessage, opts ...grpc.CallOption) (*JoinResponse, error)
 	ReceiveJoinPhase2Message(ctx context.Context, in *JoinMessage, opts ...grpc.CallOption) (*JoinResponse, error)
 	ReceiveLinkUpdateMessage(ctx context.Context, in *BatchedLinkUpdateMessage, opts ...grpc.CallOption) (*Response, error)
 	ReceiveConsensusProposal(ctx context.Context, in *ConsensusProposal, opts ...grpc.CallOption) (*ConsensusProposalResponse, error)
@@ -481,9 +523,9 @@ func NewMembershipServiceClient(cc *grpc.ClientConn) MembershipServiceClient {
 	return &membershipServiceClient{cc}
 }
 
-func (c *membershipServiceClient) ReceiveJoinMessage(ctx context.Context, in *JoinMessage, opts ...grpc.CallOption) (*JoinResponse, error) {
+func (c *membershipServiceClient) ReceivePreJoinMessage(ctx context.Context, in *PreJoinMessage, opts ...grpc.CallOption) (*JoinResponse, error) {
 	out := new(JoinResponse)
-	err := grpc.Invoke(ctx, "/remoting.MembershipService/receiveJoinMessage", in, out, c.cc, opts...)
+	err := grpc.Invoke(ctx, "/remoting.MembershipService/receivePreJoinMessage", in, out, c.cc, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +571,7 @@ func (c *membershipServiceClient) ReceiveProbe(ctx context.Context, in *ProbeMes
 // Server API for MembershipService service
 
 type MembershipServiceServer interface {
-	ReceiveJoinMessage(context.Context, *JoinMessage) (*JoinResponse, error)
+	ReceivePreJoinMessage(context.Context, *PreJoinMessage) (*JoinResponse, error)
 	ReceiveJoinPhase2Message(context.Context, *JoinMessage) (*JoinResponse, error)
 	ReceiveLinkUpdateMessage(context.Context, *BatchedLinkUpdateMessage) (*Response, error)
 	ReceiveConsensusProposal(context.Context, *ConsensusProposal) (*ConsensusProposalResponse, error)
@@ -540,20 +582,20 @@ func RegisterMembershipServiceServer(s *grpc.Server, srv MembershipServiceServer
 	s.RegisterService(&_MembershipService_serviceDesc, srv)
 }
 
-func _MembershipService_ReceiveJoinMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(JoinMessage)
+func _MembershipService_ReceivePreJoinMessage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PreJoinMessage)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(MembershipServiceServer).ReceiveJoinMessage(ctx, in)
+		return srv.(MembershipServiceServer).ReceivePreJoinMessage(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: "/remoting.MembershipService/ReceiveJoinMessage",
+		FullMethod: "/remoting.MembershipService/ReceivePreJoinMessage",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(MembershipServiceServer).ReceiveJoinMessage(ctx, req.(*JoinMessage))
+		return srv.(MembershipServiceServer).ReceivePreJoinMessage(ctx, req.(*PreJoinMessage))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -635,8 +677,8 @@ var _MembershipService_serviceDesc = grpc.ServiceDesc{
 	HandlerType: (*MembershipServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "receiveJoinMessage",
-			Handler:    _MembershipService_ReceiveJoinMessage_Handler,
+			MethodName: "receivePreJoinMessage",
+			Handler:    _MembershipService_ReceivePreJoinMessage_Handler,
 		},
 		{
 			MethodName: "receiveJoinPhase2Message",
@@ -687,7 +729,7 @@ func (m *NodeId) MarshalTo(dAtA []byte) (int, error) {
 	return i, nil
 }
 
-func (m *JoinMessage) Marshal() (dAtA []byte, err error) {
+func (m *PreJoinMessage) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalTo(dAtA)
@@ -697,7 +739,7 @@ func (m *JoinMessage) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *JoinMessage) MarshalTo(dAtA []byte) (int, error) {
+func (m *PreJoinMessage) MarshalTo(dAtA []byte) (int, error) {
 	var i int
 	_ = i
 	var l int
@@ -741,15 +783,72 @@ func (m *JoinMessage) MarshalTo(dAtA []byte) (int, error) {
 		i++
 		i = encodeVarintRapid(dAtA, i, uint64(m.ConfigurationId))
 	}
-	if m.Metadata != nil {
-		dAtA[i] = 0x2a
+	return i, nil
+}
+
+func (m *JoinMessage) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalTo(dAtA)
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *JoinMessage) MarshalTo(dAtA []byte) (int, error) {
+	var i int
+	_ = i
+	var l int
+	_ = l
+	if len(m.Sender) > 0 {
+		dAtA[i] = 0xa
 		i++
-		i = encodeVarintRapid(dAtA, i, uint64(m.Metadata.Size()))
-		n4, err := m.Metadata.MarshalTo(dAtA[i:])
+		i = encodeVarintRapid(dAtA, i, uint64(len(m.Sender)))
+		i += copy(dAtA[i:], m.Sender)
+	}
+	if m.NodeId != nil {
+		dAtA[i] = 0x12
+		i++
+		i = encodeVarintRapid(dAtA, i, uint64(m.NodeId.Size()))
+		n4, err := m.NodeId.MarshalTo(dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
 		i += n4
+	}
+	if len(m.RingNumber) > 0 {
+		dAtA6 := make([]byte, len(m.RingNumber)*10)
+		var j5 int
+		for _, num1 := range m.RingNumber {
+			num := uint64(num1)
+			for num >= 1<<7 {
+				dAtA6[j5] = uint8(uint64(num)&0x7f | 0x80)
+				num >>= 7
+				j5++
+			}
+			dAtA6[j5] = uint8(num)
+			j5++
+		}
+		dAtA[i] = 0x1a
+		i++
+		i = encodeVarintRapid(dAtA, i, uint64(j5))
+		i += copy(dAtA[i:], dAtA6[:j5])
+	}
+	if m.ConfigurationId != 0 {
+		dAtA[i] = 0x20
+		i++
+		i = encodeVarintRapid(dAtA, i, uint64(m.ConfigurationId))
+	}
+	if m.Metadata != nil {
+		dAtA[i] = 0x2a
+		i++
+		i = encodeVarintRapid(dAtA, i, uint64(m.Metadata.Size()))
+		n7, err := m.Metadata.MarshalTo(dAtA[i:])
+		if err != nil {
+			return 0, err
+		}
+		i += n7
 	}
 	return i, nil
 }
@@ -832,11 +931,11 @@ func (m *JoinResponse) MarshalTo(dAtA []byte) (int, error) {
 				dAtA[i] = 0x12
 				i++
 				i = encodeVarintRapid(dAtA, i, uint64(v.Size()))
-				n5, err := v.MarshalTo(dAtA[i:])
+				n8, err := v.MarshalTo(dAtA[i:])
 				if err != nil {
 					return 0, err
 				}
-				i += n5
+				i += n8
 			}
 		}
 	}
@@ -917,42 +1016,42 @@ func (m *LinkUpdateMessage) MarshalTo(dAtA []byte) (int, error) {
 		i = encodeVarintRapid(dAtA, i, uint64(m.ConfigurationId))
 	}
 	if len(m.RingNumber) > 0 {
-		dAtA7 := make([]byte, len(m.RingNumber)*10)
-		var j6 int
+		dAtA10 := make([]byte, len(m.RingNumber)*10)
+		var j9 int
 		for _, num1 := range m.RingNumber {
 			num := uint64(num1)
 			for num >= 1<<7 {
-				dAtA7[j6] = uint8(uint64(num)&0x7f | 0x80)
+				dAtA10[j9] = uint8(uint64(num)&0x7f | 0x80)
 				num >>= 7
-				j6++
+				j9++
 			}
-			dAtA7[j6] = uint8(num)
-			j6++
+			dAtA10[j9] = uint8(num)
+			j9++
 		}
 		dAtA[i] = 0x2a
 		i++
-		i = encodeVarintRapid(dAtA, i, uint64(j6))
-		i += copy(dAtA[i:], dAtA7[:j6])
+		i = encodeVarintRapid(dAtA, i, uint64(j9))
+		i += copy(dAtA[i:], dAtA10[:j9])
 	}
 	if m.NodeId != nil {
 		dAtA[i] = 0x32
 		i++
 		i = encodeVarintRapid(dAtA, i, uint64(m.NodeId.Size()))
-		n8, err := m.NodeId.MarshalTo(dAtA[i:])
+		n11, err := m.NodeId.MarshalTo(dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
-		i += n8
+		i += n11
 	}
 	if m.Metadata != nil {
 		dAtA[i] = 0x3a
 		i++
 		i = encodeVarintRapid(dAtA, i, uint64(m.Metadata.Size()))
-		n9, err := m.Metadata.MarshalTo(dAtA[i:])
+		n12, err := m.Metadata.MarshalTo(dAtA[i:])
 		if err != nil {
 			return 0, err
 		}
-		i += n9
+		i += n12
 	}
 	return i, nil
 }
@@ -1133,24 +1232,6 @@ func (m *ProbeResponse) MarshalTo(dAtA []byte) (int, error) {
 	return i, nil
 }
 
-func encodeFixed64Rapid(dAtA []byte, offset int, v uint64) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	dAtA[offset+4] = uint8(v >> 32)
-	dAtA[offset+5] = uint8(v >> 40)
-	dAtA[offset+6] = uint8(v >> 48)
-	dAtA[offset+7] = uint8(v >> 56)
-	return offset + 8
-}
-func encodeFixed32Rapid(dAtA []byte, offset int, v uint32) int {
-	dAtA[offset] = uint8(v)
-	dAtA[offset+1] = uint8(v >> 8)
-	dAtA[offset+2] = uint8(v >> 16)
-	dAtA[offset+3] = uint8(v >> 24)
-	return offset + 4
-}
 func encodeVarintRapid(dAtA []byte, offset int, v uint64) int {
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
@@ -1168,6 +1249,30 @@ func (m *NodeId) Size() (n int) {
 	}
 	if m.Low != 0 {
 		n += 1 + sovRapid(uint64(m.Low))
+	}
+	return n
+}
+
+func (m *PreJoinMessage) Size() (n int) {
+	var l int
+	_ = l
+	l = len(m.Sender)
+	if l > 0 {
+		n += 1 + l + sovRapid(uint64(l))
+	}
+	if m.NodeId != nil {
+		l = m.NodeId.Size()
+		n += 1 + l + sovRapid(uint64(l))
+	}
+	if len(m.RingNumber) > 0 {
+		l = 0
+		for _, e := range m.RingNumber {
+			l += sovRapid(uint64(e))
+		}
+		n += 1 + sovRapid(uint64(l)) + l
+	}
+	if m.ConfigurationId != 0 {
+		n += 1 + sovRapid(uint64(m.ConfigurationId))
 	}
 	return n
 }
@@ -1442,6 +1547,199 @@ func (m *NodeId) Unmarshal(dAtA []byte) error {
 				b := dAtA[iNdEx]
 				iNdEx++
 				m.Low |= (int64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+		default:
+			iNdEx = preIndex
+			skippy, err := skipRapid(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if skippy < 0 {
+				return ErrInvalidLengthRapid
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *PreJoinMessage) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowRapid
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= (uint64(b) & 0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: PreJoinMessage: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: PreJoinMessage: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Sender", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRapid
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= (uint64(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthRapid
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Sender = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field NodeId", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRapid
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= (int(b) & 0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthRapid
+			}
+			postIndex := iNdEx + msglen
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.NodeId == nil {
+				m.NodeId = &NodeId{}
+			}
+			if err := m.NodeId.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 3:
+			if wireType == 0 {
+				var v int32
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowRapid
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					v |= (int32(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				m.RingNumber = append(m.RingNumber, v)
+			} else if wireType == 2 {
+				var packedLen int
+				for shift := uint(0); ; shift += 7 {
+					if shift >= 64 {
+						return ErrIntOverflowRapid
+					}
+					if iNdEx >= l {
+						return io.ErrUnexpectedEOF
+					}
+					b := dAtA[iNdEx]
+					iNdEx++
+					packedLen |= (int(b) & 0x7F) << shift
+					if b < 0x80 {
+						break
+					}
+				}
+				if packedLen < 0 {
+					return ErrInvalidLengthRapid
+				}
+				postIndex := iNdEx + packedLen
+				if postIndex > l {
+					return io.ErrUnexpectedEOF
+				}
+				for iNdEx < postIndex {
+					var v int32
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRapid
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						v |= (int32(b) & 0x7F) << shift
+						if b < 0x80 {
+							break
+						}
+					}
+					m.RingNumber = append(m.RingNumber, v)
+				}
+			} else {
+				return fmt.Errorf("proto: wrong wireType = %d for field RingNumber", wireType)
+			}
+		case 4:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ConfigurationId", wireType)
+			}
+			m.ConfigurationId = 0
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowRapid
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				m.ConfigurationId |= (int64(b) & 0x7F) << shift
 				if b < 0x80 {
 					break
 				}
@@ -1875,51 +2173,14 @@ func (m *JoinResponse) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			var keykey uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRapid
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				keykey |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			var stringLenmapkey uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRapid
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLenmapkey |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLenmapkey := int(stringLenmapkey)
-			if intStringLenmapkey < 0 {
-				return ErrInvalidLengthRapid
-			}
-			postStringIndexmapkey := iNdEx + intStringLenmapkey
-			if postStringIndexmapkey > l {
-				return io.ErrUnexpectedEOF
-			}
-			mapkey := string(dAtA[iNdEx:postStringIndexmapkey])
-			iNdEx = postStringIndexmapkey
 			if m.ClusterMetadata == nil {
 				m.ClusterMetadata = make(map[string]*Metadata)
 			}
-			if iNdEx < postIndex {
-				var valuekey uint64
+			var mapkey string
+			var mapvalue *Metadata
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return ErrIntOverflowRapid
@@ -1929,46 +2190,85 @@ func (m *JoinResponse) Unmarshal(dAtA []byte) error {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					valuekey |= (uint64(b) & 0x7F) << shift
+					wire |= (uint64(b) & 0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				var mapmsglen int
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowRapid
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRapid
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= (uint64(b) & 0x7F) << shift
+						if b < 0x80 {
+							break
+						}
 					}
-					if iNdEx >= l {
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthRapid
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey > l {
 						return io.ErrUnexpectedEOF
 					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					mapmsglen |= (int(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var mapmsglen int
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRapid
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapmsglen |= (int(b) & 0x7F) << shift
+						if b < 0x80 {
+							break
+						}
 					}
+					if mapmsglen < 0 {
+						return ErrInvalidLengthRapid
+					}
+					postmsgIndex := iNdEx + mapmsglen
+					if mapmsglen < 0 {
+						return ErrInvalidLengthRapid
+					}
+					if postmsgIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = &Metadata{}
+					if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
+						return err
+					}
+					iNdEx = postmsgIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipRapid(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if skippy < 0 {
+						return ErrInvalidLengthRapid
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
 				}
-				if mapmsglen < 0 {
-					return ErrInvalidLengthRapid
-				}
-				postmsgIndex := iNdEx + mapmsglen
-				if mapmsglen < 0 {
-					return ErrInvalidLengthRapid
-				}
-				if postmsgIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				mapvalue := &Metadata{}
-				if err := mapvalue.Unmarshal(dAtA[iNdEx:postmsgIndex]); err != nil {
-					return err
-				}
-				iNdEx = postmsgIndex
-				m.ClusterMetadata[mapkey] = mapvalue
-			} else {
-				var mapvalue *Metadata
-				m.ClusterMetadata[mapkey] = mapvalue
 			}
+			m.ClusterMetadata[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -2657,51 +2957,14 @@ func (m *Metadata) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			var keykey uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRapid
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				keykey |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			var stringLenmapkey uint64
-			for shift := uint(0); ; shift += 7 {
-				if shift >= 64 {
-					return ErrIntOverflowRapid
-				}
-				if iNdEx >= l {
-					return io.ErrUnexpectedEOF
-				}
-				b := dAtA[iNdEx]
-				iNdEx++
-				stringLenmapkey |= (uint64(b) & 0x7F) << shift
-				if b < 0x80 {
-					break
-				}
-			}
-			intStringLenmapkey := int(stringLenmapkey)
-			if intStringLenmapkey < 0 {
-				return ErrInvalidLengthRapid
-			}
-			postStringIndexmapkey := iNdEx + intStringLenmapkey
-			if postStringIndexmapkey > l {
-				return io.ErrUnexpectedEOF
-			}
-			mapkey := string(dAtA[iNdEx:postStringIndexmapkey])
-			iNdEx = postStringIndexmapkey
 			if m.Metadata == nil {
 				m.Metadata = make(map[string][]byte)
 			}
-			if iNdEx < postIndex {
-				var valuekey uint64
+			var mapkey string
+			mapvalue := []byte{}
+			for iNdEx < postIndex {
+				entryPreIndex := iNdEx
+				var wire uint64
 				for shift := uint(0); ; shift += 7 {
 					if shift >= 64 {
 						return ErrIntOverflowRapid
@@ -2711,42 +2974,81 @@ func (m *Metadata) Unmarshal(dAtA []byte) error {
 					}
 					b := dAtA[iNdEx]
 					iNdEx++
-					valuekey |= (uint64(b) & 0x7F) << shift
+					wire |= (uint64(b) & 0x7F) << shift
 					if b < 0x80 {
 						break
 					}
 				}
-				var mapbyteLen uint64
-				for shift := uint(0); ; shift += 7 {
-					if shift >= 64 {
-						return ErrIntOverflowRapid
+				fieldNum := int32(wire >> 3)
+				if fieldNum == 1 {
+					var stringLenmapkey uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRapid
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						stringLenmapkey |= (uint64(b) & 0x7F) << shift
+						if b < 0x80 {
+							break
+						}
 					}
-					if iNdEx >= l {
+					intStringLenmapkey := int(stringLenmapkey)
+					if intStringLenmapkey < 0 {
+						return ErrInvalidLengthRapid
+					}
+					postStringIndexmapkey := iNdEx + intStringLenmapkey
+					if postStringIndexmapkey > l {
 						return io.ErrUnexpectedEOF
 					}
-					b := dAtA[iNdEx]
-					iNdEx++
-					mapbyteLen |= (uint64(b) & 0x7F) << shift
-					if b < 0x80 {
-						break
+					mapkey = string(dAtA[iNdEx:postStringIndexmapkey])
+					iNdEx = postStringIndexmapkey
+				} else if fieldNum == 2 {
+					var mapbyteLen uint64
+					for shift := uint(0); ; shift += 7 {
+						if shift >= 64 {
+							return ErrIntOverflowRapid
+						}
+						if iNdEx >= l {
+							return io.ErrUnexpectedEOF
+						}
+						b := dAtA[iNdEx]
+						iNdEx++
+						mapbyteLen |= (uint64(b) & 0x7F) << shift
+						if b < 0x80 {
+							break
+						}
 					}
+					intMapbyteLen := int(mapbyteLen)
+					if intMapbyteLen < 0 {
+						return ErrInvalidLengthRapid
+					}
+					postbytesIndex := iNdEx + intMapbyteLen
+					if postbytesIndex > l {
+						return io.ErrUnexpectedEOF
+					}
+					mapvalue = make([]byte, mapbyteLen)
+					copy(mapvalue, dAtA[iNdEx:postbytesIndex])
+					iNdEx = postbytesIndex
+				} else {
+					iNdEx = entryPreIndex
+					skippy, err := skipRapid(dAtA[iNdEx:])
+					if err != nil {
+						return err
+					}
+					if skippy < 0 {
+						return ErrInvalidLengthRapid
+					}
+					if (iNdEx + skippy) > postIndex {
+						return io.ErrUnexpectedEOF
+					}
+					iNdEx += skippy
 				}
-				intMapbyteLen := int(mapbyteLen)
-				if intMapbyteLen < 0 {
-					return ErrInvalidLengthRapid
-				}
-				postbytesIndex := iNdEx + intMapbyteLen
-				if postbytesIndex > l {
-					return io.ErrUnexpectedEOF
-				}
-				mapvalue := make([]byte, mapbyteLen)
-				copy(mapvalue, dAtA[iNdEx:postbytesIndex])
-				iNdEx = postbytesIndex
-				m.Metadata[mapkey] = mapvalue
-			} else {
-				var mapvalue []byte
-				m.Metadata[mapkey] = mapvalue
 			}
+			m.Metadata[mapkey] = mapvalue
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
@@ -3054,60 +3356,61 @@ var (
 func init() { proto.RegisterFile("rapid.proto", fileDescriptorRapid) }
 
 var fileDescriptorRapid = []byte{
-	// 874 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x9c, 0x56, 0x5f, 0x6f, 0xe2, 0x46,
-	0x10, 0x8f, 0x31, 0x10, 0x6e, 0x20, 0x39, 0x67, 0x4b, 0xef, 0x5c, 0xae, 0x42, 0xc8, 0x7d, 0x28,
-	0x4a, 0x2b, 0x3f, 0xd0, 0x4a, 0x3d, 0xf5, 0x8f, 0x54, 0xfe, 0xf8, 0x12, 0x72, 0x87, 0x41, 0x0b,
-	0xb4, 0xea, 0x4b, 0x91, 0x83, 0xf7, 0xc0, 0x82, 0x78, 0xd1, 0xae, 0x49, 0x95, 0xe7, 0xaa, 0xea,
-	0xd7, 0x68, 0xbf, 0x4d, 0xfb, 0xd6, 0x8f, 0x50, 0xe5, 0x93, 0x54, 0x5e, 0x6c, 0x58, 0xc7, 0x5c,
-	0x68, 0xfb, 0xb6, 0xbb, 0x33, 0xf3, 0x9b, 0xf9, 0x31, 0xbf, 0x19, 0x0c, 0x45, 0xe6, 0xac, 0x3c,
-	0xd7, 0x5c, 0x31, 0x1a, 0x50, 0x54, 0x60, 0xe4, 0x86, 0x06, 0x9e, 0x3f, 0x33, 0x4c, 0xc8, 0xdb,
-	0xd4, 0x25, 0x5d, 0x17, 0x21, 0xc8, 0xce, 0xbd, 0xd9, 0x5c, 0x57, 0x6a, 0x4a, 0x5d, 0xc5, 0xe2,
-	0x8c, 0x34, 0x50, 0x97, 0xf4, 0x27, 0x3d, 0x23, 0x9e, 0xc2, 0xa3, 0xf1, 0xa7, 0x02, 0xc5, 0x2b,
-	0xea, 0xf9, 0x3d, 0xc2, 0xb9, 0x33, 0x23, 0xe8, 0x19, 0xe4, 0x39, 0xf1, 0x5d, 0xc2, 0x44, 0xdc,
-	0x13, 0x1c, 0xdd, 0x50, 0x1d, 0xf2, 0xbe, 0xc0, 0x15, 0xc1, 0xc5, 0x86, 0x66, 0xc6, 0x29, 0xcd,
-	0x4d, 0x3e, 0x1c, 0xd9, 0x51, 0x15, 0x80, 0x79, 0xfe, 0xcc, 0x5e, 0xdf, 0x5c, 0x13, 0xa6, 0xab,
-	0x35, 0xb5, 0x9e, 0xc3, 0xd2, 0x0b, 0xaa, 0xc3, 0xd3, 0x29, 0xf5, 0xdf, 0x7a, 0xb3, 0x35, 0x73,
-	0x02, 0x8f, 0xfa, 0x5d, 0x57, 0xcf, 0x8a, 0x7a, 0x1e, 0x3e, 0x23, 0x13, 0x0a, 0x37, 0x24, 0x70,
-	0x5c, 0x27, 0x70, 0xf4, 0x9c, 0xc8, 0x8a, 0x76, 0x59, 0x7b, 0x91, 0x05, 0x6f, 0x7d, 0x8c, 0x9f,
-	0x55, 0x28, 0x85, 0x5c, 0x30, 0xe1, 0x2b, 0xea, 0xf3, 0x77, 0x93, 0x79, 0x09, 0xc0, 0x03, 0x27,
-	0x58, 0xf3, 0x36, 0x75, 0x89, 0x20, 0x74, 0xda, 0xd0, 0x77, 0xd0, 0x21, 0xc6, 0x70, 0x6b, 0xc7,
-	0x92, 0xef, 0xbe, 0xe2, 0xd5, 0xfd, 0xc5, 0x97, 0x21, 0x37, 0xa7, 0x3c, 0xe0, 0x7a, 0xb6, 0xa6,
-	0xd6, 0x9f, 0xe0, 0xcd, 0x05, 0x35, 0xa0, 0xe8, 0xb9, 0xc4, 0x0f, 0xbc, 0xb7, 0x1e, 0x61, 0x5c,
-	0xcf, 0xd5, 0xd4, 0xbd, 0xbf, 0xa5, 0xec, 0x84, 0xc6, 0xf0, 0x74, 0xba, 0x5c, 0xf3, 0x80, 0xb0,
-	0x98, 0xb3, 0x9e, 0x17, 0x71, 0x9f, 0x24, 0x4b, 0x8e, 0x69, 0x9b, 0xed, 0xa4, 0xb7, 0xe5, 0x07,
-	0xec, 0x0e, 0x3f, 0xc4, 0xa8, 0x7c, 0x07, 0xe5, 0x7d, 0x8e, 0xa1, 0x46, 0x16, 0xe4, 0x2e, 0xfa,
-	0xc5, 0xc2, 0x23, 0xaa, 0x43, 0xee, 0xd6, 0x59, 0xae, 0x49, 0xd4, 0xfa, 0x7d, 0x4d, 0xd8, 0x38,
-	0x7c, 0x99, 0x79, 0xa9, 0x18, 0x0b, 0xd0, 0x5b, 0x4e, 0x30, 0x9d, 0x13, 0xf7, 0x8d, 0xe7, 0x2f,
-	0xc6, 0x2b, 0xd7, 0x09, 0xc8, 0x21, 0x75, 0x7d, 0x11, 0x76, 0x5a, 0xb8, 0x70, 0xa1, 0x98, 0x62,
-	0xe3, 0xc5, 0x2e, 0x49, 0x0a, 0x06, 0x6f, 0x9d, 0x8d, 0xdf, 0x33, 0x70, 0x96, 0x4e, 0xa3, 0xc3,
-	0xf1, 0xd2, 0xf3, 0x17, 0x43, 0x36, 0x8d, 0xf2, 0xc4, 0xd7, 0xd8, 0xd2, 0xe1, 0x81, 0x20, 0x13,
-	0x59, 0x3a, 0x3c, 0x40, 0x9f, 0x03, 0x08, 0x27, 0xd1, 0x6b, 0xd1, 0xd4, 0xd3, 0x46, 0x39, 0x59,
-	0xc4, 0xc6, 0x86, 0x25, 0xbf, 0xff, 0x20, 0xe6, 0xe4, 0x58, 0xe4, 0xf6, 0x8c, 0x45, 0x3c, 0x60,
-	0xf9, 0x03, 0x03, 0x26, 0x8f, 0xc5, 0xf1, 0xbf, 0x18, 0x0b, 0x80, 0x42, 0x2c, 0x0d, 0x63, 0x01,
-	0x67, 0xed, 0xf0, 0xe0, 0xf3, 0x35, 0x1f, 0x30, 0xba, 0xa2, 0xdc, 0x59, 0x3e, 0x32, 0xf3, 0x29,
-	0x72, 0x99, 0x03, 0x62, 0x57, 0x25, 0xb1, 0x1b, 0x2f, 0xe0, 0x83, 0x54, 0xb2, 0x6d, 0x25, 0xbf,
-	0x28, 0x50, 0x88, 0x8b, 0x45, 0x5f, 0x4b, 0x94, 0x14, 0xd1, 0xff, 0x5a, 0x9a, 0x92, 0x99, 0x14,
-	0xf4, 0x36, 0xa2, 0xf2, 0x15, 0x9c, 0x1c, 0x92, 0x70, 0x59, 0x96, 0x70, 0x49, 0x96, 0xeb, 0xb7,
-	0x50, 0x1a, 0x30, 0x7a, 0x7d, 0x50, 0xa2, 0x3a, 0x1c, 0xaf, 0x9c, 0xbb, 0x25, 0x75, 0x5c, 0x41,
-	0xb2, 0x84, 0xe3, 0xab, 0xf1, 0x0d, 0x9c, 0x08, 0x84, 0xed, 0xda, 0xf9, 0x14, 0xf2, 0x9b, 0x95,
-	0x21, 0x20, 0x12, 0x32, 0x0a, 0x5b, 0x19, 0xc9, 0x28, 0xf2, 0x39, 0xff, 0x55, 0x81, 0xd3, 0xe4,
-	0xc6, 0x41, 0x1f, 0x82, 0x7e, 0xd9, 0x1f, 0x8e, 0xec, 0x66, 0xcf, 0x9a, 0x34, 0xdf, 0x60, 0xab,
-	0xd9, 0xf9, 0x61, 0xd2, 0xb5, 0x27, 0xb8, 0x6b, 0x5f, 0x68, 0x47, 0x48, 0x87, 0xf2, 0x78, 0xdc,
-	0xed, 0xa4, 0x2c, 0x0a, 0xd2, 0xa0, 0x34, 0x6c, 0xbe, 0xb2, 0x26, 0xa3, 0xfe, 0xe4, 0xaa, 0xdf,
-	0xb5, 0xb5, 0x0c, 0x42, 0x70, 0xda, 0xee, 0xdb, 0xaf, 0xba, 0x17, 0x93, 0xf6, 0x65, 0xd3, 0xbe,
-	0xb0, 0x3a, 0x9a, 0x8a, 0x9e, 0xc3, 0x7b, 0x3d, 0xab, 0xd7, 0xb2, 0xf0, 0xf0, 0xb2, 0x3b, 0x98,
-	0x60, 0xeb, 0xca, 0x6a, 0x8f, 0xac, 0x8e, 0x96, 0x3d, 0xaf, 0x02, 0xec, 0x64, 0x8e, 0xf2, 0x90,
-	0x19, 0x0f, 0xb4, 0x23, 0x54, 0x80, 0x6c, 0xa7, 0xff, 0xbd, 0xad, 0x29, 0xe7, 0x1f, 0x03, 0xec,
-	0xea, 0x0f, 0xed, 0xfd, 0xd7, 0xda, 0x11, 0x3a, 0x83, 0x93, 0x56, 0xbf, 0x3f, 0x1a, 0x8e, 0x70,
-	0x73, 0x30, 0x10, 0x75, 0x34, 0x7e, 0x53, 0xe1, 0xac, 0x47, 0x42, 0x59, 0xf3, 0xb9, 0xb7, 0x1a,
-	0x12, 0x76, 0xeb, 0x4d, 0x09, 0xb2, 0x00, 0x31, 0x32, 0x25, 0xde, 0x2d, 0x91, 0xff, 0x70, 0xde,
-	0x4f, 0x2e, 0xb1, 0xe8, 0xb9, 0xf2, 0x6c, 0xff, 0x6e, 0x33, 0x8e, 0xd0, 0x6b, 0xd0, 0x25, 0x98,
-	0xc1, 0xdc, 0xe1, 0xa4, 0xf1, 0xbf, 0xc1, 0x46, 0x5b, 0xb0, 0xf4, 0x16, 0x31, 0x76, 0x51, 0xef,
-	0x5a, 0x68, 0x15, 0x69, 0xf2, 0x24, 0xd4, 0x1f, 0xb7, 0xa8, 0xe9, 0x61, 0x93, 0x16, 0x5b, 0xca,
-	0x58, 0xf9, 0xe8, 0x11, 0xa3, 0x84, 0xdf, 0x84, 0x52, 0x84, 0x2f, 0x84, 0x87, 0x24, 0x7e, 0xb2,
-	0x96, 0x2b, 0xcf, 0x1f, 0xbc, 0xef, 0x20, 0x5a, 0xe7, 0x7f, 0xdc, 0x57, 0x95, 0xbf, 0xee, 0xab,
-	0xca, 0xdf, 0xf7, 0x55, 0x05, 0xb4, 0x29, 0xbd, 0x31, 0x6f, 0xd9, 0xcc, 0x8c, 0x3e, 0x2a, 0xae,
-	0x5b, 0x05, 0x1c, 0x45, 0x0e, 0x94, 0xeb, 0xbc, 0xf8, 0xc8, 0xf8, 0xec, 0x9f, 0x00, 0x00, 0x00,
-	0xff, 0xff, 0xa9, 0xe4, 0xb0, 0x2a, 0x73, 0x08, 0x00, 0x00,
+	// 893 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xcc, 0x56, 0xcd, 0x8e, 0xe2, 0x46,
+	0x10, 0x1e, 0x63, 0x60, 0xd8, 0x82, 0x61, 0x3d, 0x1d, 0x76, 0xd6, 0x61, 0x23, 0x84, 0x9c, 0x43,
+	0xd0, 0x24, 0xf2, 0x81, 0x44, 0xca, 0x2a, 0x3f, 0x52, 0xf8, 0xf1, 0xce, 0x30, 0xb3, 0x18, 0xab,
+	0x81, 0x44, 0xb9, 0x04, 0x19, 0xdc, 0x0b, 0x16, 0x8c, 0x8d, 0xba, 0xcd, 0x44, 0x73, 0x8e, 0xa2,
+	0xbc, 0x44, 0x2e, 0xb9, 0xe4, 0x59, 0x92, 0x5b, 0x1e, 0x21, 0x9a, 0x27, 0x89, 0xdc, 0xd8, 0xc6,
+	0xc6, 0xec, 0x92, 0xdc, 0x72, 0x73, 0xf7, 0x57, 0xf5, 0x55, 0x55, 0xd7, 0x57, 0x05, 0x50, 0xa4,
+	0xe6, 0xda, 0xb6, 0xd4, 0x35, 0x75, 0x3d, 0x17, 0x15, 0x28, 0xb9, 0x73, 0x3d, 0xdb, 0x99, 0x2b,
+	0x2a, 0xe4, 0x75, 0xd7, 0x22, 0x3d, 0x0b, 0x21, 0xc8, 0x2e, 0xec, 0xf9, 0x42, 0x16, 0xea, 0x42,
+	0x43, 0xc4, 0xfc, 0x1b, 0x49, 0x20, 0xae, 0xdc, 0x1f, 0xe5, 0x0c, 0xbf, 0xf2, 0x3f, 0x95, 0x5f,
+	0x05, 0x28, 0x1b, 0x94, 0xdc, 0xb8, 0xb6, 0xd3, 0x27, 0x8c, 0x99, 0x73, 0x82, 0x2e, 0x20, 0xcf,
+	0x88, 0x63, 0x11, 0xca, 0x5d, 0x9f, 0xe0, 0xe0, 0x84, 0x1a, 0x90, 0x77, 0x38, 0x35, 0xf7, 0x2f,
+	0x36, 0x25, 0x35, 0x8c, 0xaa, 0x6e, 0x43, 0xe2, 0x00, 0x47, 0x35, 0x00, 0x6a, 0x3b, 0x73, 0x7d,
+	0x73, 0x37, 0x25, 0x54, 0x16, 0xeb, 0x62, 0x23, 0x87, 0x63, 0x37, 0xa8, 0x01, 0x4f, 0x67, 0xae,
+	0xf3, 0xc6, 0x9e, 0x6f, 0xa8, 0xe9, 0xd9, 0xae, 0xd3, 0xb3, 0xe4, 0x2c, 0x4f, 0x69, 0xff, 0x5a,
+	0xf9, 0x53, 0x80, 0xe2, 0xff, 0x34, 0x37, 0xa4, 0x42, 0xe1, 0x8e, 0x78, 0xa6, 0x65, 0x7a, 0xa6,
+	0x9c, 0xe3, 0x51, 0xd1, 0x2e, 0x6a, 0x3f, 0x40, 0x70, 0x64, 0xa3, 0xfc, 0x24, 0x42, 0xc9, 0xaf,
+	0x05, 0x13, 0xb6, 0x76, 0x1d, 0xf6, 0xf6, 0x62, 0x5e, 0x02, 0x30, 0xcf, 0xf4, 0x36, 0xac, 0xe3,
+	0x5a, 0x84, 0x17, 0x54, 0x6e, 0xca, 0x3b, 0x6a, 0x9f, 0x63, 0x18, 0xe1, 0x38, 0x66, 0x7b, 0x28,
+	0x79, 0xf1, 0x70, 0xf2, 0x15, 0xc8, 0x2d, 0x5c, 0xe6, 0x31, 0x39, 0x5b, 0x17, 0x1b, 0x4f, 0xf0,
+	0xf6, 0x80, 0x9a, 0x50, 0xb4, 0x2d, 0xe2, 0x78, 0xf6, 0x1b, 0x9b, 0x50, 0x26, 0xe7, 0xea, 0xe2,
+	0xc1, 0xb7, 0x8c, 0x1b, 0xa1, 0x31, 0x3c, 0x9d, 0xad, 0x36, 0xcc, 0x23, 0x34, 0xac, 0x59, 0xce,
+	0x73, 0xbf, 0x8f, 0x93, 0x29, 0x87, 0x65, 0xab, 0x9d, 0xa4, 0xb5, 0xe6, 0x78, 0xf4, 0x01, 0xef,
+	0x73, 0x54, 0xbf, 0x85, 0xca, 0x21, 0x43, 0x5f, 0xc2, 0x4b, 0xf2, 0x10, 0xbc, 0x98, 0xff, 0x89,
+	0x1a, 0x90, 0xbb, 0x37, 0x57, 0x1b, 0x12, 0xb4, 0xfe, 0x50, 0x13, 0xb6, 0x06, 0x5f, 0x64, 0x5e,
+	0x0a, 0xca, 0x12, 0xe4, 0xb6, 0xe9, 0xcd, 0x16, 0xc4, 0x7a, 0x6d, 0x3b, 0xcb, 0xf1, 0xda, 0x32,
+	0x3d, 0x72, 0x4c, 0x5d, 0x9f, 0xfb, 0x9d, 0xe6, 0x26, 0x8c, 0x2b, 0xa6, 0xd8, 0x7c, 0xb1, 0x0b,
+	0x92, 0xa2, 0xc1, 0x91, 0xb1, 0xf2, 0x5b, 0x06, 0xce, 0xd3, 0x61, 0x64, 0x38, 0x5d, 0xd9, 0xce,
+	0x72, 0x48, 0x67, 0x41, 0x9c, 0xf0, 0x18, 0x22, 0x5d, 0xe6, 0xf1, 0x62, 0x02, 0xa4, 0xcb, 0x3c,
+	0xf4, 0x19, 0x00, 0x37, 0xe2, 0xbd, 0xe6, 0x4d, 0x2d, 0x37, 0x2b, 0xc9, 0x24, 0xb6, 0x18, 0x8e,
+	0xd9, 0xfd, 0x07, 0x31, 0x27, 0xc7, 0x22, 0x77, 0x60, 0x2c, 0xc2, 0x01, 0xcb, 0x1f, 0x19, 0xb0,
+	0xf8, 0x58, 0x9c, 0xfe, 0x8b, 0xb1, 0x00, 0x28, 0x84, 0xd2, 0x50, 0x96, 0x70, 0xde, 0xf1, 0x3f,
+	0x1c, 0xb6, 0x61, 0x06, 0x75, 0xd7, 0x2e, 0x33, 0x57, 0xef, 0x98, 0xf9, 0x54, 0x71, 0x99, 0x23,
+	0x62, 0x17, 0x63, 0x62, 0x57, 0x5e, 0xc0, 0xfb, 0xa9, 0x60, 0x51, 0x26, 0x3f, 0x0b, 0x50, 0x08,
+	0x93, 0x45, 0x5f, 0xc5, 0x4a, 0x12, 0x78, 0xff, 0xeb, 0xe9, 0x92, 0xd4, 0xa4, 0xa0, 0x23, 0x8f,
+	0xea, 0x97, 0x70, 0x76, 0x4c, 0xc2, 0x95, 0xb8, 0x84, 0x4b, 0x71, 0xb9, 0x7e, 0x03, 0x25, 0x83,
+	0xba, 0xd3, 0xa3, 0x12, 0x95, 0xe1, 0x74, 0x6d, 0x3e, 0xac, 0x5c, 0xd3, 0xe2, 0x45, 0x96, 0x70,
+	0x78, 0x54, 0xbe, 0x86, 0x33, 0xce, 0x10, 0xad, 0x9d, 0x4f, 0x20, 0xbf, 0x5d, 0x19, 0x9c, 0x22,
+	0x21, 0x23, 0xbf, 0x95, 0x81, 0x8c, 0x02, 0x9b, 0xcb, 0x5f, 0x04, 0x28, 0x27, 0x37, 0x0e, 0xfa,
+	0x00, 0xe4, 0xeb, 0xc1, 0x70, 0xa4, 0xb7, 0xfa, 0xda, 0xa4, 0xf5, 0x1a, 0x6b, 0xad, 0xee, 0xf7,
+	0x93, 0x9e, 0x3e, 0xc1, 0x3d, 0xfd, 0x4a, 0x3a, 0x41, 0x32, 0x54, 0xc6, 0xe3, 0x5e, 0x37, 0x85,
+	0x08, 0x48, 0x82, 0xd2, 0xb0, 0xf5, 0x4a, 0x9b, 0x8c, 0x06, 0x93, 0x9b, 0x41, 0x4f, 0x97, 0x32,
+	0x08, 0x41, 0xb9, 0x33, 0xd0, 0x5f, 0xf5, 0xae, 0x26, 0x9d, 0xeb, 0x96, 0x7e, 0xa5, 0x75, 0x25,
+	0x11, 0x3d, 0x87, 0xf7, 0xfa, 0x5a, 0xbf, 0xad, 0xe1, 0xe1, 0x75, 0xcf, 0x98, 0x60, 0xed, 0x46,
+	0xeb, 0x8c, 0xb4, 0xae, 0x94, 0xbd, 0xac, 0x01, 0xec, 0x64, 0x8e, 0xf2, 0x90, 0x19, 0x1b, 0xd2,
+	0x09, 0x2a, 0x40, 0xb6, 0x3b, 0xf8, 0x4e, 0x97, 0x84, 0xcb, 0x8f, 0x00, 0x76, 0xf9, 0xfb, 0xf8,
+	0xe0, 0x56, 0x3a, 0x41, 0xe7, 0x70, 0xd6, 0x1e, 0x0c, 0x46, 0xc3, 0x11, 0x6e, 0x19, 0x06, 0xcf,
+	0xa3, 0xf9, 0xbb, 0x08, 0xe7, 0x7d, 0xe2, 0xcb, 0x9a, 0x2d, 0xec, 0xf5, 0x90, 0xd0, 0x7b, 0x7b,
+	0x46, 0xd0, 0x2d, 0x3c, 0xa3, 0x64, 0x46, 0xec, 0x7b, 0xb2, 0xf7, 0x7b, 0x18, 0x5b, 0xbd, 0x49,
+	0xa4, 0x7a, 0x71, 0x78, 0xc3, 0x29, 0x27, 0xe8, 0x16, 0xe4, 0x80, 0xcc, 0x07, 0x8c, 0x85, 0xc9,
+	0x48, 0x33, 0xe4, 0x7b, 0x96, 0xf4, 0x3a, 0x4e, 0x36, 0x8a, 0xc8, 0xd2, 0xbb, 0x44, 0xd9, 0x79,
+	0xbd, 0x6d, 0xad, 0x55, 0x63, 0xf3, 0x17, 0x63, 0xfd, 0x21, 0x62, 0x4d, 0x8f, 0x5c, 0x6c, 0xbd,
+	0xa5, 0xc0, 0xea, 0x87, 0xef, 0x00, 0x63, 0xfc, 0x2d, 0x28, 0x45, 0xef, 0xe9, 0x4e, 0x09, 0xba,
+	0x88, 0x3f, 0xe3, 0x4e, 0xd1, 0xd5, 0xe7, 0x7b, 0xf7, 0x3b, 0x8a, 0xf6, 0xe5, 0x1f, 0x8f, 0x35,
+	0xe1, 0xaf, 0xc7, 0x9a, 0xf0, 0xf7, 0x63, 0x4d, 0x00, 0x69, 0xe6, 0xde, 0xa9, 0xf7, 0x74, 0xae,
+	0x06, 0xff, 0x7c, 0xa6, 0xed, 0x02, 0x0e, 0x3c, 0x0d, 0x61, 0x9a, 0xe7, 0xff, 0x84, 0x3e, 0xfd,
+	0x27, 0x00, 0x00, 0xff, 0xff, 0xff, 0xbf, 0xc4, 0xf3, 0x18, 0x09, 0x00, 0x00,
 }

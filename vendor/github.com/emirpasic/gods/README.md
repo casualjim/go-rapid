@@ -87,13 +87,13 @@ Implements [Container](#containers) interface.
 
 ```go
 type List interface {
-    Get(index int) (interface{}, bool)
+	Get(index int) (interface{}, bool)
 	Remove(index int)
 	Add(values ...interface{})
 	Contains(values ...interface{}) bool
 	Sort(comparator utils.Comparator)
-    Swap(index1, index2 int)
-   	Insert(index int, values ...interface{})
+	Swap(index1, index2 int)
+	Insert(index int, values ...interface{})
 
 	containers.Container
 	// Empty() bool
@@ -114,7 +114,7 @@ package main
 
 import (
 	"github.com/emirpasic/gods/lists/arraylist"
-    "github.com/emirpasic/gods/utils"
+	"github.com/emirpasic/gods/utils"
 )
 
 func main() {
@@ -135,8 +135,8 @@ func main() {
 	_ = list.Size()                       // 0
 	list.Add("a")                         // ["a"]
 	list.Clear()                          // []
-    list.Insert(0, "b")                   // ["b"]
-    list.Insert(0, "a")                   // ["a","b"]
+	list.Insert(0, "b")                   // ["b"]
+	list.Insert(0, "a")                   // ["a","b"]
 }
 ```
 
@@ -172,8 +172,8 @@ func main() {
 	_ = list.Size()                       // 0
 	list.Add("a")                         // ["a"]
 	list.Clear()                          // []
-    list.Insert(0, "b")                   // ["b"]
-    list.Insert(0, "a")                   // ["a","b"]
+	list.Insert(0, "b")                   // ["b"]
+	list.Insert(0, "a")                   // ["a","b"]
 }
 ```
 
@@ -209,8 +209,8 @@ func main() {
 	_ = list.Size()                       // 0
 	list.Add("a")                         // ["a"]
 	list.Clear()                          // []
-    list.Insert(0, "b")                   // ["b"]
-    list.Insert(0, "a")                   // ["a","b"]
+	list.Insert(0, "b")                   // ["b"]
+	list.Insert(0, "a")                   // ["a","b"]
 }
 ```
 
@@ -222,7 +222,7 @@ Implements [Container](#containers) interface.
 
 ```go
 type Set interface {
-    Add(elements ...interface{})
+	Add(elements ...interface{})
 	Remove(elements ...interface{})
 	Contains(elements ...interface{}) bool
 
@@ -370,7 +370,7 @@ Implements [Container](#containers) interface.
 
 ```go
 type Map interface {
-    Put(key interface{}, value interface{})
+	Put(key interface{}, value interface{})
 	Get(key interface{}) (value interface{}, found bool)
 	Remove(key interface{})
 	Keys() []interface{}
@@ -445,9 +445,9 @@ func main() {
 	m.Empty()                           // true
 	m.Size()                            // 0
 
-    // Other:
-    m.Min() // Returns the minimum key and its value from map.
-    m.Max() // Returns the maximum key and its value from map.
+	// Other:
+	m.Min() // Returns the minimum key and its value from map.
+	m.Max() // Returns the maximum key and its value from map.
 }
 ```
 
@@ -584,11 +584,11 @@ func main() {
 	tree.Empty() // true
 	tree.Size()  // 0
 
-    // Other:
-    tree.Left() // gets the left-most (min) node
-    tree.Right() // get the right-most (max) node
-    tree.Floor(1) // get the floor node
-    tree.Ceiling(1) // get the ceiling node
+	// Other:
+	tree.Left() // gets the left-most (min) node
+	tree.Right() // get the right-most (max) node
+	tree.Floor(1) // get the floor node
+	tree.Ceiling(1) // get the ceiling node
 }
 ```
 
@@ -898,7 +898,7 @@ Typical usage:
 it := list.Iterator()
 for it.Next() {
 	index, value := it.Index(), it.Value()
-    ...
+	...
 }
 ```
 
@@ -925,7 +925,7 @@ Typical usage:
 it := tree.Iterator()
 for it.Next() {
 	key, value := it.Key(), it.Value()
-    ...
+	...
 }
 ```
 
@@ -952,7 +952,7 @@ Typical usage of iteration in reverse:
 it := list.Iterator()
 for it.End(); it.Prev(); {
 	index, value := it.Index(), it.Value()
-    ...
+	...
 }
 ```
 
@@ -973,7 +973,7 @@ Typical usage of iteration in reverse:
 it := tree.Iterator()
 for it.End(); it.Prev(); {
 	key, value := it.Key(), it.Value()
-    ...
+	...
 }
 ```
 
@@ -1354,13 +1354,13 @@ package main
 
 import (
 	"github.com/emirpasic/gods/lists/arraylist"
-    "github.com/emirpasic/gods/utils"
+	"github.com/emirpasic/gods/utils"
 )
 
 func main() {
 	list := arraylist.New()
-    list.Add(2, 1, 3)
-    values := GetSortedValues(container, utils.StringComparator) // [1, 2, 3]
+	list.Add(2, 1, 3)
+	values := GetSortedValues(container, utils.StringComparator) // [1, 2, 3]
 }
 ```
 
@@ -1434,3 +1434,8 @@ go fmt ./... && gofmt -s -w . && go vet ./... && go get ./... && go test ./... &
 ### License
 
 This library is distributed under the BSD-style license found in the [LICENSE](https://github.com/emirpasic/gods/blob/master/LICENSE) file.
+
+### Sponsors
+
+## <a href="https://www.browserstack.com/?ref=gods"><img src="http://www.hajdarevic.net/browserstack.svg" alt="BrowserStack" width="250"/></a>
+[BrowserStack](https://www.browserstack.com/?ref=webhook) is a cloud-based cross-browser testing tool that enables developers to test their websites across various browsers on different operating systems and mobile devices, without requiring users to install virtual machines, devices or emulators.
