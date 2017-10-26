@@ -5,6 +5,7 @@ package mocks
 
 import (
 	context "context"
+
 	node "github.com/casualjim/go-rapid/node"
 	remoting "github.com/casualjim/go-rapid/remoting"
 	gomock "github.com/golang/mock/gomock"
@@ -59,19 +60,6 @@ func (_mr *MockClientMockRecorder) SendJoinMessage(arg0, arg1, arg2 interface{})
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendJoinMessage", arg0, arg1, arg2)
 }
 
-// SendJoinPhase2Message mocks base method
-func (_m *MockClient) SendJoinPhase2Message(_param0 context.Context, _param1 node.Addr, _param2 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
-	ret := _m.ctrl.Call(_m, "SendJoinPhase2Message", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.JoinResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendJoinPhase2Message indicates an expected call of SendJoinPhase2Message
-func (_mr *MockClientMockRecorder) SendJoinPhase2Message(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendJoinPhase2Message", arg0, arg1, arg2)
-}
-
 // SendLinkUpdateMessage mocks base method
 func (_m *MockClient) SendLinkUpdateMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error) {
 	ret := _m.ctrl.Call(_m, "SendLinkUpdateMessage", _param0, _param1, _param2)
@@ -83,6 +71,19 @@ func (_m *MockClient) SendLinkUpdateMessage(_param0 context.Context, _param1 nod
 // SendLinkUpdateMessage indicates an expected call of SendLinkUpdateMessage
 func (_mr *MockClientMockRecorder) SendLinkUpdateMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendLinkUpdateMessage", arg0, arg1, arg2)
+}
+
+// SendPreJoinMessage mocks base method
+func (_m *MockClient) SendPreJoinMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.PreJoinMessage) (*remoting.JoinResponse, error) {
+	ret := _m.ctrl.Call(_m, "SendPreJoinMessage", _param0, _param1, _param2)
+	ret0, _ := ret[0].(*remoting.JoinResponse)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SendPreJoinMessage indicates an expected call of SendPreJoinMessage
+func (_mr *MockClientMockRecorder) SendPreJoinMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendPreJoinMessage", arg0, arg1, arg2)
 }
 
 // SendProbe mocks base method
