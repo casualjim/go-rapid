@@ -13,12 +13,51 @@ import (
 )
 
 const (
-	failureThreshold = 10
-	// Number of BOOTSTRAPPING status responses a node is allowed to return before we begin
-	// treating that as a failure condition.
+	failureThreshold int64 = 10
+	// Number of BOOTSTRAPPING status responses a node is allowed to return before
+	// we begin treating that as a failure condition.
 	bootstrapCountThreshold = 30
 	minInterval             = time.Duration(500000000)
 )
+
+// CreateProbe creates a probe to be used in the scheduler
+type CreateProbe func(node.Addr, Subscriber) Probe
+
+// The Probe interface is implemented by objects that implement this interface
+// can be used in a scheduled prober
+type Probe interface {
+	Probe()
+}
+
+type pingPongProbe struct {
+	failures   int64
+	addr       node.Addr
+	msg        *remoting.ProbeMessage
+	log        rapid.Logger
+	client     rapid.Client
+	subscriber Subscriber
+}
+
+func (p *pingPongProbe) Probe() {
+	if atomic.LoadInt64(&p.failures) >= failureThreshold {
+		p.subscriber.OnLinkFailed(p.addr)
+		return
+	}
+
+	resp, err := p.client.SendProbe(context.TODO(), p.addr, p.msg)
+	if err != nil {
+		p.log.Printf("probe at %s from %s failed: %v", p.addr, p.addr, err)
+		atomic.AddInt64(&p.failures, 1)
+		return
+	}
+	if resp.Status == remoting.NodeStatus_BOOTSTRAPPING {
+		p.log.Printf("probe at %s from %s failed: %v", p.addr, p.addr, err)
+		atomic.AddInt64(&p.failures, 1)
+	}
+}
+
+type scheduler struct {
+}
 
 // The Detector interface. Objects that implement this interface can be
 // supplied to the MembershipService to perform failure detection.
@@ -124,6 +163,7 @@ func (r *runner) HandleProbe(msg *remoting.ProbeMessage) *remoting.ProbeResponse
 // SubscriberFunc for function based subscriber
 type SubscriberFunc func(node.Addr)
 
+// OnLinkFailed implements the Subscriber interface for the given function
 func (fn SubscriberFunc) OnLinkFailed(addr node.Addr) {
 	fn(addr)
 }
@@ -267,8 +307,7 @@ func (c *counter) IncrementAndGet() int64 {
 }
 
 func (c *counter) Get() int64 {
-	// TODO: for arm etc make sure to use load instead of read
-	return c.val
+	return atomic.LoadInt64(&c.val)
 }
 
 func newCounterMap(size int) *concCounterMap {

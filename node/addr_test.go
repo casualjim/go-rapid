@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+/*
 var javaHashes = []int64{
 	-8142702818976521972,
 	-7147371770735187532,
@@ -20,7 +21,7 @@ var javaHashes = []int64{
 	4678032494214207661,
 }
 
-/*
+
 permutation 0 for 127.0.0.1:2375 -6970849018552849470
 permutation 1 for 127.0.0.1:2375 -5466037957856086435
 permutation 2 for 127.0.0.1:2375 4815649783673873042

@@ -54,11 +54,12 @@ func (h Addr) String() string {
 
 // Checksum creates a hashcode with the specified seed
 func (h Addr) Checksum(seed int) int {
-	hch := xxhash.ChecksumString64S(h.Host, uint64(seed))
+	var hash uint64 = 1
+	hash = hash*37 + xxhash.ChecksumString64S(h.Host, uint64(seed))
 	prt := make([]byte, 4)
 	binary.BigEndian.PutUint32(prt, uint32(h.Port))
-	hcp := xxhash.Checksum64S(prt, uint64(seed))
-	return int(hch*31 + hcp)
+	hash = hash*37 + xxhash.Checksum64S(prt, uint64(seed))
+	return int(hash)
 }
 
 // Hashcode for the addr object

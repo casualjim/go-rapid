@@ -66,11 +66,12 @@ type ServiceOpts struct {
 func NewService(opts ServiceOpts) (Service, error) {
 	md := node.NewMetadataRegistry()
 	for k, v := range opts.Metadata {
-		if v != nil {
-			_, err := md.Add(k, v)
-			if err != nil {
-				return nil, err
-			}
+		if v == nil {
+			continue
+		}
+		_, err := md.Add(k, v)
+		if err != nil {
+			return nil, err
 		}
 	}
 

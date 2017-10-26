@@ -431,8 +431,8 @@ func TestWatermark_InvalidateFailingLinks(t *testing.T) {
 	// Next, we add alerts *about* monitors[H, K) of node dst.
 	failedMonitors := make(map[node.Addr]struct{}, k-h-1)
 	for i := h - 1; i < k; i++ {
-		monitorsOfMonitor, err := vw.KnownMonitorsForNode(monitors[i])
-		require.NoError(t, err)
+		monitorsOfMonitor, e := vw.KnownMonitorsForNode(monitors[i])
+		require.NoError(t, e)
 		failedMonitors[monitors[i]] = struct{}{}
 
 		for j := 0; j < k; j++ {

@@ -1,5 +1,8 @@
 language: go
-sudo: false
+sudo: true
+dist: trusty
+services:
+- docker
 go:
 - 1.8.x
 go_import_path: github.com/casualjim/go-rapid
