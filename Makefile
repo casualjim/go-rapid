@@ -1,7 +1,7 @@
 # vim: ft=make
 
 GO ?= go
-GOVERSION ?= go1.9.1
+GOVERSION ?= go1.9.2
 SHELL := /bin/bash
 GIT_VERSION = $(shell git describe --tags)
 
@@ -17,6 +17,11 @@ check: goversion checkfmt ## Runs static code analysis checks
 test: ## Runs tests in all packages
 	@echo running tests...
 	@(go test -race $$(go list ./... | grep -v vendor))
+
+.PHONY: coverage
+coverage: check ## Runs coverages in all packages
+	@echo running coverages...
+	.travis/coverage
 
 .PHONY: update-deps
 update-deps: ## Updates the dependencies with flattened vendor and without test files

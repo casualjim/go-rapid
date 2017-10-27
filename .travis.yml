@@ -14,8 +14,7 @@ install:
 - go get github.com/gogo/protobuf/protoc-gen-gogofast
 
 script:
-#- go generate
-- make check
-- ./.travis/coverage
+- make coverage
+
 after_success:
 - bash <(curl -s https://codecov.io/bash)
