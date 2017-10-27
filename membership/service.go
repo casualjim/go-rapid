@@ -38,8 +38,8 @@ type Subscriber interface {
 // Service interface with all the methods a membership service should support
 // when it implements the rapid protocol.
 type Service interface {
+	HandlePreJoinMessage(*remoting.PreJoinMessage) (*remoting.JoinResponse, error)
 	HandleJoinMessage(*remoting.JoinMessage) (*remoting.JoinResponse, error)
-	HandleJoinPhase2Message(*remoting.JoinMessage) (*remoting.JoinResponse, error)
 	HandleLinkUpdateMessage(*remoting.BatchedLinkUpdateMessage) error
 	HandleConsensusProposal(*remoting.ConsensusProposal) error
 	HandleProbeMessage(*remoting.ProbeMessage) (*remoting.ProbeResponse, error)
@@ -136,7 +136,7 @@ func (d *defaultService) OnLinkFailed(monitoree node.Addr) {
 	}()
 }
 
-func (d *defaultService) HandleJoinMessage(msg *remoting.JoinMessage) (*remoting.JoinResponse, error) {
+func (d *defaultService) HandlePreJoinMessage(msg *remoting.PreJoinMessage) (*remoting.JoinResponse, error) {
 	joiningHost, err := node.ParseAddr(msg.GetSender())
 	if err != nil {
 		return nil, fmt.Errorf("handle join: %v", err)
@@ -159,7 +159,7 @@ func (d *defaultService) HandleJoinMessage(msg *remoting.JoinMessage) (*remoting
 	return resp, nil
 }
 
-func (d *defaultService) HandleJoinPhase2Message(msg *remoting.JoinMessage) (*remoting.JoinResponse, error) {
+func (d *defaultService) HandleJoinMessage(msg *remoting.JoinMessage) (*remoting.JoinResponse, error) {
 	cfgID := d.Membership.ConfigurationID()
 	if cfgID == msg.GetConfigurationId() {
 		d.Log.Printf("Enqueueing safe to join sender=%s monitor=%s config=%d size=%d", msg.GetSender(), d.Addr, cfgID, d.Membership.Size())
