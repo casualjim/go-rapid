@@ -16,11 +16,11 @@ check: goversion checkfmt ## Runs static code analysis checks
 .PHONY: test
 test: ## Runs tests in all packages
 	@echo running tests...
-	@(go test -race $$(go list ./... | grep -v vendor))
+	@($(GO) test -race ./...)
 
 .PHONY: coverage
-coverage: check ## Runs coverages in all packages
-	@echo running coverages...
+coverage: check ## Runs coverage in all packages
+	@echo running coverage...
 	.travis/coverage
 
 .PHONY: update-deps

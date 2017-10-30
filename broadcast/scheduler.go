@@ -2,6 +2,7 @@ package broadcast
 
 import (
 	"context"
+	"math"
 	"time"
 
 	"github.com/casualjim/go-rapid/remoting"
@@ -30,7 +31,7 @@ func (s *ScheduledBroadcasts) Enqueue(msg remoting.LinkUpdateMessage) {
 // Schedule to send batch updates
 func Schedule(bc Broadcaster, interval time.Duration, maxSize int) *ScheduledBroadcasts {
 	stopSignal := make(chan chan struct{})
-	queue := make(chan remoting.LinkUpdateMessage, 100)
+	queue := make(chan remoting.LinkUpdateMessage, math.MaxInt32)
 
 	sch := &ScheduledBroadcasts{
 		stop:  stopSignal,

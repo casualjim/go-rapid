@@ -317,12 +317,11 @@ func newCounterMap(size int) *concCounterMap {
 
 	return &concCounterMap{
 		data: make(map[node.Addr]*counter, size),
-		lock: &sync.RWMutex{},
 	}
 }
 
 type concCounterMap struct {
-	lock *sync.RWMutex
+	lock sync.RWMutex
 	data map[node.Addr]*counter
 }
 

@@ -2,6 +2,8 @@ package membership
 
 import (
 	"fmt"
+	"math"
+	"sync"
 	"time"
 
 	rapid "github.com/casualjim/go-rapid"
@@ -105,6 +107,7 @@ func NewService(opts ServiceOpts) (Service, error) {
 		subscriptions:  eventSubscriptions{},
 		batchScheduler: broadcast.Schedule(broadcaster, 100*time.Millisecond, 50),
 		lfRunner:       lfRunner,
+		joiners:        &joiners{toRespondTo: make(map[node.Addr]chan remoting.JoinResponse)},
 	}
 	lfRunner.Subscribe(svc)
 	return svc, nil
@@ -112,10 +115,13 @@ func NewService(opts ServiceOpts) (Service, error) {
 
 type defaultService struct {
 	ServiceOpts
+
+	nodeIds        map[node.Addr]remoting.NodeId
 	metadata       *node.MetadataRegistry
 	subscriptions  eventSubscriptions
 	batchScheduler *broadcast.ScheduledBroadcasts
 	lfRunner       linkfailure.Runner
+	joiners        *joiners
 }
 
 func (d *defaultService) OnLinkFailed(monitoree node.Addr) {
@@ -150,6 +156,7 @@ func (d *defaultService) HandlePreJoinMessage(msg *remoting.PreJoinMessage) (*re
 		StatusCode:      status,
 	}
 	d.Log.Printf("join at seed seed=%s config=%d size=%d", d.Addr, resp.ConfigurationId, d.Membership.Size())
+
 	if status == remoting.JoinStatusCode_SAFE_TO_JOIN || status == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		for _, a := range d.Membership.ExpectedMonitorsForNode(joiningHost) {
 			resp.Hosts = append(resp.Hosts, a.String())
@@ -159,12 +166,53 @@ func (d *defaultService) HandlePreJoinMessage(msg *remoting.PreJoinMessage) (*re
 	return resp, nil
 }
 
-func (d *defaultService) HandleJoinMessage(msg *remoting.JoinMessage) (*remoting.JoinResponse, error) {
-	cfgID := d.Membership.ConfigurationID()
-	if cfgID == msg.GetConfigurationId() {
-		d.Log.Printf("Enqueueing safe to join sender=%s monitor=%s config=%d size=%d", msg.GetSender(), d.Addr, cfgID, d.Membership.Size())
+func (d *defaultService) HandleJoinMessage(joinMsg *remoting.JoinMessage) (*remoting.JoinResponse, error) {
+	senderAddr, err := node.ParseAddr(joinMsg.GetSender())
+	if err != nil {
+		return nil, err
 	}
-	return nil, nil
+
+	cfgID := d.Membership.ConfigurationID()
+	if cfgID == joinMsg.GetConfigurationId() {
+		d.Log.Printf("Enqueueing safe to join sender=%s monitor=%s config=%d size=%d", senderAddr, d.Addr, cfgID, d.Membership.Size())
+
+		// TODO: build a future for join responses
+		d.joiners.InitIfAbsent(senderAddr)
+
+		d.batchScheduler.Enqueue(remoting.LinkUpdateMessage{
+			LinkSrc:         d.Addr.String(),
+			LinkDst:         joinMsg.GetSender(),
+			LinkStatus:      remoting.LinkStatus_UP,
+			ConfigurationId: cfgID,
+			NodeId:          joinMsg.GetNodeId(),
+			RingNumber:      joinMsg.GetRingNumber(),
+			Metadata:        joinMsg.GetMetadata(),
+		})
+
+		return nil, nil
+	}
+
+	cfg := d.Membership.Configuration()
+	d.Log.Printf("Wrong configuration for sender=%s monitor=%s config=%d, myConfig=%s size=%d", senderAddr, d.Addr, cfgID, cfg, d.Membership.Size())
+
+	resp := &remoting.JoinResponse{
+		ConfigurationId: cfg.ConfigID,
+		Sender:          d.Addr.String(),
+	}
+	if d.Membership.IsKnownMember(senderAddr) && joinMsg.GetNodeId() != nil && d.Membership.IsKnownIdentifier(*joinMsg.GetNodeId()) {
+		d.Log.Printf("Host present, but requesting join sender=%s monitor=%s config=%d, myConfig=%s size=%d", senderAddr, d.Addr, cfgID, cfg, d.Membership.Size())
+		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
+		for _, v := range cfg.Nodes {
+			resp.Hosts = append(resp.GetHosts(), v.String())
+		}
+		for _, v := range cfg.Identifiers {
+			resp.Identifiers = append(resp.GetIdentifiers(), &v)
+		}
+	} else {
+		resp.StatusCode = remoting.JoinStatusCode_CONFIG_CHANGED
+		d.Log.Printf("Returning CONFIG_CHANGED sender=%s monitor=%s config=%d, myConfig=%s size=%d", senderAddr, d.Addr, cfgID, cfg, d.Membership.Size())
+	}
+	return resp, nil
 }
 
 func (d *defaultService) HandleLinkUpdateMessage(msg *remoting.BatchedLinkUpdateMessage) error {
@@ -176,7 +224,7 @@ func (d *defaultService) HandleConsensusProposal(msg *remoting.ConsensusProposal
 }
 
 func (d *defaultService) HandleProbeMessage(msg *remoting.ProbeMessage) (*remoting.ProbeResponse, error) {
-	return nil, nil
+	return d.lfRunner.HandleProbe(msg), nil
 }
 
 func (d *defaultService) RegisterSubscription(evt rapid.ClusterEvent, sub Subscriber) {
@@ -197,35 +245,81 @@ func (d *defaultService) Stop() {
 }
 
 type eventSubscriptions struct {
-	ViewChangeProposals     []Subscriber
-	ViewChange              []Subscriber
+	ViewChangeProposals []Subscriber
+	vcpl                sync.Mutex
+
+	ViewChange []Subscriber
+	vcl        sync.Mutex
+
 	ViewChangeOneStepFailed []Subscriber
-	Kicked                  []Subscriber
+	vcosfl                  sync.Mutex
+
+	Kicked []Subscriber
+	kl     sync.Mutex
 }
 
 func (e *eventSubscriptions) Register(evt rapid.ClusterEvent, sub Subscriber) {
 	switch evt {
 	case rapid.ClusterEventViewChangeProposal:
+		e.vcpl.Lock()
 		e.ViewChangeProposals = append(e.ViewChangeProposals, sub)
+		e.vcpl.Unlock()
 	case rapid.ClusterEventViewChange:
+		e.vcl.Lock()
 		e.ViewChange = append(e.ViewChange, sub)
+		e.vcl.Unlock()
 	case rapid.ClusterEventViewChangeOneStepFailed:
+		e.vcosfl.Lock()
 		e.ViewChangeOneStepFailed = append(e.ViewChangeOneStepFailed, sub)
+		e.vcosfl.Unlock()
 	case rapid.ClusterEventKicked:
+		e.kl.Lock()
 		e.Kicked = append(e.Kicked, sub)
+		e.kl.Unlock()
 	}
 }
 
 func (e *eventSubscriptions) Get(evt rapid.ClusterEvent) []Subscriber {
 	switch evt {
 	case rapid.ClusterEventViewChangeProposal:
-		return e.ViewChangeProposals
+		e.vcpl.Lock()
+		b := e.ViewChangeProposals[:]
+		e.vcpl.Unlock()
+		return b
 	case rapid.ClusterEventViewChange:
-		return e.ViewChange
+		e.vcl.Lock()
+		b := e.ViewChange[:]
+		e.vcl.Unlock()
+		return b
 	case rapid.ClusterEventViewChangeOneStepFailed:
-		return e.ViewChangeOneStepFailed
+		e.vcosfl.Lock()
+		b := e.ViewChangeOneStepFailed[:]
+		e.vcosfl.Unlock()
+		return b
 	case rapid.ClusterEventKicked:
-		return e.Kicked
+		e.kl.Lock()
+		b := e.Kicked[:]
+		e.kl.Unlock()
+		return b
 	}
 	return nil
+}
+
+type joiners struct {
+	lock        sync.Mutex
+	toRespondTo map[node.Addr]chan remoting.JoinResponse
+}
+
+func (j *joiners) InitIfAbsent(key node.Addr) {
+	j.lock.Lock()
+	if _, ok := j.toRespondTo[key]; !ok {
+		j.toRespondTo[key] = make(chan remoting.JoinResponse, math.MaxInt32)
+	}
+	j.lock.Unlock()
+}
+
+func (j *joiners) Enqueue(key node.Addr, resp remoting.JoinResponse) {
+	j.lock.Lock()
+	j.toRespondTo[key] <- resp
+	j.lock.Unlock()
 }

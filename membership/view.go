@@ -2,7 +2,9 @@ package membership
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/OneOfOne/xxhash"
 	"github.com/casualjim/go-rapid/node"
@@ -81,6 +83,7 @@ func NewView(k int, nodeIDs []remoting.NodeId, nodeAddrs []node.Addr) *View {
 // View hosts K permutations of the memberlist that represent the monitoring
 // relationship between nodes; every node monitors its successor on each ring.
 type View struct {
+	lock            sync.Mutex
 	k               int
 	rings           map[int]*treeset.Set
 	identifiersSeen *treeset.Set
@@ -92,16 +95,22 @@ type View struct {
 // when present it returns the known monitors of node
 // when not present it will return the expected monitors of a node
 func (v *View) MonitorsForNode(addr node.Addr) []node.Addr {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if v.IsKnownMember(addr) {
 		return v.knownMonitorsForNode(addr)
 	}
-	return v.ExpectedMonitorsForNode(addr)
+	return v.expectedMonitorsForNode(addr)
 }
 
 // LinkStatusForNode checks if the node is present.
 // When present it returns the link status as down
 // When not present it return sthe link status as up
 func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if v.IsKnownMember(addr) {
 		return remoting.LinkStatus_DOWN
 	}
@@ -110,6 +119,9 @@ func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
 
 // IsSafeToJoin queries if a host with a logical identifier is safe to add to the network.
 func (v *View) IsSafeToJoin(addr node.Addr, id remoting.NodeId) remoting.JoinStatusCode {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if v.IsKnownMember(addr) {
 		return remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING
 	}
@@ -121,6 +133,9 @@ func (v *View) IsSafeToJoin(addr node.Addr, id remoting.NodeId) remoting.JoinSta
 
 // RingAdd a node to all K rings and records its unique identifier
 func (v *View) RingAdd(addr node.Addr, id remoting.NodeId) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if v.IsKnownIdentifier(id) {
 		return fmt.Errorf("host add attempt with identifier already seen: {host: %s, identifier: %v}", addr, id)
 	}
@@ -137,6 +152,8 @@ func (v *View) RingAdd(addr node.Addr, id remoting.NodeId) error {
 
 // RingDel a host from all K rings.
 func (v *View) RingDel(addr node.Addr) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
 	if !v.IsKnownMember(addr) {
 		return &NodeNotInRingError{Node: addr}
 	}
@@ -149,6 +166,8 @@ func (v *View) RingDel(addr node.Addr) error {
 
 // Size of the list of nodes currently in the membership
 func (v *View) Size() int {
+	v.lock.Lock()
+	defer v.lock.Unlock()
 	return v.rings[0].Size()
 }
 
@@ -164,6 +183,9 @@ func (v *View) IsKnownMember(addr node.Addr) bool {
 
 // KnownMonitorsForNode returns the set of monitors for the specified node
 func (v *View) KnownMonitorsForNode(addr node.Addr) ([]node.Addr, error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if !v.IsKnownMember(addr) {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
@@ -219,6 +241,9 @@ func lower(lst *treeset.Set, addr node.Addr) (predecessor node.Addr, found bool)
 
 // KnownMonitoreesForNode returns the set of nodes monitored by the specified node
 func (v *View) KnownMonitoreesForNode(addr node.Addr) ([]node.Addr, error) {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
 	if !v.IsKnownMember(addr) {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
@@ -245,6 +270,12 @@ func (v *View) knownMonitoreesForNode(addr node.Addr) []node.Addr {
 // added to the ring. Used during the bootstrap protocol to identify
 // the nodes responsible for gatekeeping a joining peer.
 func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	return v.expectedMonitorsForNode(addr)
+}
+
+func (v *View) expectedMonitorsForNode(addr node.Addr) []node.Addr {
 	if v.rings[0].Size() == 0 {
 		return nil
 	}
@@ -262,6 +293,12 @@ func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {
 
 // GetRing gets the list of hosts in the k'th ring.
 func (v *View) GetRing(k int) []node.Addr {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	return v.getRing(k)
+}
+
+func (v *View) getRing(k int) []node.Addr {
 	addrs := make([]node.Addr, v.rings[0].Size())
 	v.rings[0].Each(func(i int, v interface{}) {
 		addrs[i] = v.(node.Addr)
@@ -272,6 +309,12 @@ func (v *View) GetRing(k int) []node.Addr {
 // RingNumbers of a monitor for a given monitoree
 // such that monitoree is a successor of monitor on ring[k].
 func (v *View) RingNumbers(monitor, monitoree node.Addr) []int {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+	return v.ringNumbers(monitor, monitoree)
+}
+
+func (v *View) ringNumbers(monitor, monitoree node.Addr) []int {
 	monitorees := v.knownMonitoreesForNode(monitor)
 	if len(monitorees) == 0 {
 		return nil
@@ -365,6 +408,17 @@ type Configuration struct {
 	Identifiers []remoting.NodeId
 	Nodes       []node.Addr
 	ConfigID    int64
+}
+
+func (c *Configuration) String() string {
+	if c == nil {
+		return "null"
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Sprintf(`{"error":%q}`, err.Error())
+	}
+	return string(b)
 }
 
 // NodeAlreadInRingError contains the node address that is already in the ring
