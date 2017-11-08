@@ -103,3 +103,7 @@
 [[constraint]]
   branch = "master"
   name = "google.golang.org/grpc"
+
+[[constraint]]
+  branch = "master"
+  name = "github.com/casualjim/rabbit"
