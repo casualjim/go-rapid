@@ -2,7 +2,6 @@ package broadcast
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	rapid "github.com/casualjim/go-rapid"
@@ -39,7 +38,6 @@ func TestUnicastAll_BatchUpdate(t *testing.T) {
 
 	broadcast := &unicastFiltered{
 		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
 		client:  client,
 		log:     rapid.NOOPLogger,
 		members: members,
@@ -74,7 +72,6 @@ func TestUnicastAll_ConsensusProposal(t *testing.T) {
 
 	broadcast := &unicastFiltered{
 		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
 		client:  client,
 		log:     rapid.NOOPLogger,
 		members: members,
@@ -95,7 +92,6 @@ func TestUnicastAll_SetMembership(t *testing.T) {
 	client := mocks.NewMockClient(ctrl)
 	broadcast := &unicastFiltered{
 		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
 		client:  client,
 		log:     rapid.NOOPLogger,
 		members: members,

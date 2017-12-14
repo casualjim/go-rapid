@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log"
 	"os"
-	"sync"
 	"testing"
 	"time"
 
@@ -28,8 +27,6 @@ func TestDetectorRunner_CheckMonitorees_Empty(t *testing.T) {
 			Detector: mockDetector,
 			Log:      log.New(os.Stderr, "[rapid] ", 0),
 		},
-		lock:       &sync.Mutex{},
-		subscLock:  &sync.Mutex{},
 		monitorees: map[node.Addr]struct{}{},
 	}
 	var counter int
@@ -52,8 +49,6 @@ func TestDetectorRunner_CheckMonitorees_Success(t *testing.T) {
 			Detector: mockDetector,
 			Log:      log.New(os.Stderr, "[rapid] ", 0),
 		},
-		lock:       &sync.Mutex{},
-		subscLock:  &sync.Mutex{},
 		monitorees: map[node.Addr]struct{}{addr: struct{}{}},
 	}
 	var counter int
@@ -79,8 +74,6 @@ func TestDetectorRunner_CheckMonitorees_Failed(t *testing.T) {
 			Detector: mockDetector,
 			Log:      log.New(os.Stderr, "[rapid] ", 0),
 		},
-		lock:       &sync.Mutex{},
-		subscLock:  &sync.Mutex{},
 		monitorees: map[node.Addr]struct{}{addr: struct{}{}},
 	}
 	var counter int
@@ -106,8 +99,6 @@ func TestDetectorRunner_UpdateMembership(t *testing.T) {
 			Detector: mockDetector,
 			Log:      log.New(os.Stderr, "[rapid] ", 0),
 		},
-		lock:       &sync.Mutex{},
-		subscLock:  &sync.Mutex{},
 		monitorees: map[node.Addr]struct{}{addr: struct{}{}},
 	}
 	r.tick = r.checkMonitorees
@@ -118,7 +109,6 @@ func TestDetectorRunner_UpdateMembership(t *testing.T) {
 	var mees = []node.Addr{mee1, mee2, mee3}
 
 	mockDetector.EXPECT().OnMembershipChange(mees).Times(1)
-	mockClient.EXPECT().UpdateLongLivedConnections(mees).Times(1)
 	r.UpdateMembership(mees)
 	assert.NotContains(t, r.monitorees, addr)
 	assert.Contains(t, r.monitorees, mee1)

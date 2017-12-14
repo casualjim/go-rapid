@@ -266,7 +266,7 @@ func (v *View) knownMonitoreesForNode(addr node.Addr) []node.Addr {
 	return monitorees
 }
 
-// ExpectedMonitorsForNode returns the expected monitors of {@code node}, even before it is
+// ExpectedMonitorsForNode returns the expected monitors of node at addr, even before it is
 // added to the ring. Used during the bootstrap protocol to identify
 // the nodes responsible for gatekeeping a joining peer.
 func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {

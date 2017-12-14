@@ -30,7 +30,6 @@ func UnicastToAll(client rapid.Client, log rapid.Logger) Broadcaster {
 	}
 	return &unicastFiltered{
 		Filter: MatchAll,
-		lock:   &sync.RWMutex{},
 		client: client,
 		log:    log,
 	}
@@ -39,7 +38,7 @@ func UnicastToAll(client rapid.Client, log rapid.Logger) Broadcaster {
 type unicastFiltered struct {
 	Filter  Filter
 	members []node.Addr
-	lock    *sync.RWMutex
+	lock    sync.RWMutex
 	client  rapid.Client
 	log     rapid.Logger
 }

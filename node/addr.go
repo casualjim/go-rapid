@@ -10,7 +10,80 @@ import (
 	"github.com/OneOfOne/xxhash"
 )
 
-// ParseAddr to host and port number, the addr string can be in the form address:port_number of address:port_name
+// NewAddrSet returns an unordered set of Addr initialized with the provided
+func NewAddrSet(addrs ...Addr) *AddrSet {
+	st := &AddrSet{elems: make(map[Addr]struct{}, len(addrs))}
+	for _, v := range addrs {
+		st.Add(v)
+	}
+	return st
+}
+
+// AddrSet represents an unordered set of addresses
+type AddrSet struct {
+	elems map[Addr]struct{}
+}
+
+// Add an addr to the set
+func (a *AddrSet) Add(addr Addr) bool {
+	if _, ok := a.elems[addr]; ok {
+		return false
+	}
+	a.elems[addr] = struct{}{}
+	return true
+}
+
+// AddString address to the set after parsing to Addr
+func (a *AddrSet) AddString(addr string) (bool, error) {
+	ad, err := ParseAddr(addr)
+	if err != nil {
+		return false, err
+	}
+	return a.Add(ad), nil
+}
+
+// Del address from the set
+func (a *AddrSet) Del(addr Addr) bool {
+	if _, ok := a.elems[addr]; ok {
+		delete(a.elems, addr)
+		return true
+	}
+	return false
+}
+
+// DelString address from the set after parsing to Addr
+func (a *AddrSet) DelString(addr string) (bool, error) {
+	ad, err := ParseAddr(addr)
+	if err != nil {
+		return false, err
+	}
+	return a.Del(ad), nil
+}
+
+func (a *AddrSet) ToSlice() []Addr {
+	res := make([]Addr, len(a.elems))
+	var i int
+	for e := range a.elems {
+		res[i] = e
+		i++
+	}
+	return res
+}
+
+// ParseAddrs to host and port number, the addr strings can in form address:port_number or address:port_name
+func ParseAddrs(addrs []string) ([]Addr, error) {
+	result := make([]Addr, len(addrs))
+	for i, a := range addrs {
+		aa, err := ParseAddr(a)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = aa
+	}
+	return result, nil
+}
+
+// ParseAddr to host and port number, the addr string can be in the form address:port_number or address:port_name
 func ParseAddr(addr string) (Addr, error) {
 	h, p, err := net.SplitHostPort(addr)
 	if err != nil {

@@ -20,45 +20,6 @@ const (
 	minInterval             = time.Duration(500000000)
 )
 
-// CreateProbe creates a probe to be used in the scheduler
-type CreateProbe func(node.Addr, Subscriber) Probe
-
-// The Probe interface is implemented by objects that implement this interface
-// can be used in a scheduled prober
-type Probe interface {
-	Probe()
-}
-
-type pingPongProbe struct {
-	failures   int64
-	addr       node.Addr
-	msg        *remoting.ProbeMessage
-	log        rapid.Logger
-	client     rapid.Client
-	subscriber Subscriber
-}
-
-func (p *pingPongProbe) Probe() {
-	if atomic.LoadInt64(&p.failures) >= failureThreshold {
-		p.subscriber.OnLinkFailed(p.addr)
-		return
-	}
-
-	resp, err := p.client.SendProbe(context.TODO(), p.addr, p.msg)
-	if err != nil {
-		p.log.Printf("probe at %s from %s failed: %v", p.addr, p.addr, err)
-		atomic.AddInt64(&p.failures, 1)
-		return
-	}
-	if resp.Status == remoting.NodeStatus_BOOTSTRAPPING {
-		p.log.Printf("probe at %s from %s failed: %v", p.addr, p.addr, err)
-		atomic.AddInt64(&p.failures, 1)
-	}
-}
-
-type scheduler struct {
-}
-
 // The Detector interface. Objects that implement this interface can be
 // supplied to the MembershipService to perform failure detection.
 type Detector interface {
@@ -82,9 +43,9 @@ type runner struct {
 	RunnerOpts
 	monitorees    map[node.Addr]struct{}
 	stopSignal    chan struct{}
-	lock          *sync.Mutex
+	lock          sync.Mutex
 	subscriptions []Subscriber
-	subscLock     *sync.Mutex
+	subscLock     sync.Mutex
 	tick          func()
 	minInterval   time.Duration
 }
@@ -145,7 +106,6 @@ func (r *runner) UpdateMembership(addrs []node.Addr) {
 	for _, mee := range addrs {
 		r.monitorees[mee] = struct{}{}
 	}
-	r.Client.UpdateLongLivedConnections(addrs)
 	r.Detector.OnMembershipChange(addrs)
 	r.lock.Unlock()
 }
@@ -186,8 +146,6 @@ func Run(opts RunnerOpts) Runner {
 	r := &runner{
 		RunnerOpts:  opts,
 		monitorees:  make(map[node.Addr]struct{}, 100),
-		lock:        &sync.Mutex{},
-		subscLock:   &sync.Mutex{},
 		minInterval: minInterval,
 	}
 	r.tick = r.checkMonitorees
@@ -197,9 +155,10 @@ func Run(opts RunnerOpts) Runner {
 
 // PingPongOpts to configure the pingpong failure detector
 type PingPongOpts struct {
-	Addr   node.Addr
 	Client rapid.Client
 	Log    rapid.Logger
+
+	Addr node.Addr
 
 	_ struct{} // avoid unkeyed usage
 }
