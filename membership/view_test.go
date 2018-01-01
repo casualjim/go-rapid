@@ -5,7 +5,6 @@ import (
 
 	"github.com/casualjim/go-rapid/remoting"
 
-	"github.com/casualjim/go-rapid/node"
 	"github.com/pborman/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,7 +16,7 @@ func newNodeID() remoting.NodeId {
 
 func TestView_AddOneRing(t *testing.T) {
 	vw := NewView(k, nil, nil)
-	addr := node.Addr{Host: "127.0.0.1", Port: 123}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 123}
 
 	require.NoError(t, vw.RingAdd(addr, newNodeID()))
 	require.Equal(t, 1, vw.rings[0].Size())
@@ -36,7 +35,7 @@ func TestView_MultipleRingAdditions(t *testing.T) {
 	const numNodes = 10
 
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		require.NoError(t, vw.RingAdd(addr, newNodeID()))
 	}
 	for i := 0; i < k; i++ {
@@ -51,7 +50,7 @@ func TestView_RingReAdditions(t *testing.T) {
 	const startPort = 0
 
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(startPort + i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(startPort + i)}
 		require.NoError(t, vw.RingAdd(addr, newNodeID()))
 	}
 
@@ -62,7 +61,7 @@ func TestView_RingReAdditions(t *testing.T) {
 
 	var numErrs int
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(startPort + i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(startPort + i)}
 		if assert.Error(t, vw.RingAdd(addr, newNodeID())) {
 			numErrs++
 		}
@@ -76,7 +75,7 @@ func TestView_RingOnlyDelete(t *testing.T) {
 	var numErrs int
 
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		if assert.Error(t, vw.RingDel(addr)) {
 			numErrs++
 		}
@@ -91,11 +90,11 @@ func TestView_RingAdditionsAndDeletions(t *testing.T) {
 	var numErrs int
 
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		require.NoError(t, vw.RingAdd(addr, newNodeID()))
 	}
 	for i := 0; i < numNodes; i++ {
-		addr := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		if err := vw.RingDel(addr); err != nil {
 			numErrs++
 		}
@@ -111,7 +110,7 @@ func TestView_RingAdditionsAndDeletions(t *testing.T) {
 func TestView_MonitoringRelationshipEdge(t *testing.T) {
 	vw := NewView(k, nil, nil)
 
-	addr := node.Addr{Host: "127.0.0.1", Port: 1}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}
 	require.NoError(t, vw.RingAdd(addr, newNodeID()))
 	mee, err := vw.KnownMonitoreesForNode(addr)
 	if assert.NoError(t, err) {
@@ -122,7 +121,7 @@ func TestView_MonitoringRelationshipEdge(t *testing.T) {
 		assert.Empty(t, mms)
 	}
 
-	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 2}
 	_, err2 := vw.KnownMonitoreesForNode(addr2)
 	require.Error(t, err2)
 	_, err3 := vw.KnownMonitorsForNode(addr2)
@@ -132,7 +131,7 @@ func TestView_MonitoringRelationshipEdge(t *testing.T) {
 func TestView_MonitoringRelationshipEmpty(t *testing.T) {
 	vw := NewView(k, nil, nil)
 	var numErrs int
-	addr := node.Addr{Host: "127.0.0.1", Port: 1}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}
 	if _, err := vw.KnownMonitoreesForNode(addr); err != nil {
 		numErrs++
 	}
@@ -146,8 +145,8 @@ func TestView_MonitoringRelationshipEmpty(t *testing.T) {
 
 func TestView_MonitoringRelationshipTwoNodes(t *testing.T) {
 	vw := NewView(k, nil, nil)
-	n1 := node.Addr{Host: "127.0.0.1", Port: 1}
-	n2 := node.Addr{Host: "127.0.0.1", Port: 2}
+	n1 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}
+	n2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 2}
 
 	require.NoError(t, vw.RingAdd(n1, newNodeID()))
 	require.NoError(t, vw.RingAdd(n2, newNodeID()))
@@ -164,12 +163,12 @@ func TestView_MonitoringRelationshipTwoNodes(t *testing.T) {
 	assert.Len(t, toNodeSet(mms), 1)
 }
 
-func toNodeSet(addrs []node.Addr) []node.Addr {
-	set := make(map[node.Addr]struct{})
+func toNodeSet(addrs []*remoting.Endpoint) []*remoting.Endpoint {
+	set := make(map[*remoting.Endpoint]struct{})
 	for _, v := range addrs {
 		set[v] = struct{}{}
 	}
-	result := make([]node.Addr, 0, len(set))
+	result := make([]*remoting.Endpoint, 0, len(set))
 	for k := range set {
 		result = append(result, k)
 	}
@@ -178,9 +177,9 @@ func toNodeSet(addrs []node.Addr) []node.Addr {
 
 func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 	vw := NewView(k, nil, nil)
-	n1 := node.Addr{Host: "127.0.0.1", Port: 1}
-	n2 := node.Addr{Host: "127.0.0.1", Port: 2}
-	n3 := node.Addr{Host: "127.0.0.1", Port: 3}
+	n1 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}
+	n2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 2}
+	n3 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 3}
 
 	require.NoError(t, vw.RingAdd(n1, newNodeID()))
 	require.NoError(t, vw.RingAdd(n2, newNodeID()))
@@ -213,10 +212,10 @@ func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
 	vw := NewView(k, nil, nil)
 	const numNodes = 1000
-	var list []node.Addr
+	var list []*remoting.Endpoint
 
 	for i := 0; i < numNodes; i++ {
-		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		list = append(list, n)
 		require.NoError(t, vw.RingAdd(n, newNodeID()))
 	}
@@ -236,10 +235,10 @@ func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
 func TestView_MonitoringRelationshipBootstrap(t *testing.T) {
 	vw := NewView(k, nil, nil)
 	const serverPort = 1234
-	n := node.Addr{Host: "127.0.0.1", Port: serverPort}
+	n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: serverPort}
 	require.NoError(t, vw.RingAdd(n, newNodeID()))
 
-	joiningNode := node.Addr{Host: "127.0.0.1", Port: serverPort + 1}
+	joiningNode := &remoting.Endpoint{Hostname: "127.0.0.1", Port: serverPort + 1}
 	exms := vw.ExpectedMonitorsForNode(joiningNode)
 	assert.Len(t, exms, k)
 	assert.Len(t, toNodeSet(exms), 1)
@@ -253,11 +252,11 @@ func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
 		numNodes   = 20
 	)
 
-	joiningNode := node.Addr{Host: "127.0.0.1", Port: serverPort - 1}
+	joiningNode := &remoting.Endpoint{Hostname: "127.0.0.1", Port: serverPort - 1}
 	var numMonitor int
 
 	for i := 0; i < numNodes; i++ {
-		n := node.Addr{Host: "127.0.0.1", Port: int32(serverPort + i)}
+		n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(serverPort + i)}
 		require.NoError(t, vw.RingAdd(n, newNodeID()))
 		exms := vw.ExpectedMonitorsForNode(joiningNode)
 		numMonitorActual := len(exms)
@@ -272,10 +271,10 @@ func TestView_NodeUniqueIDNoDeletions(t *testing.T) {
 	vw := NewView(k, nil, nil)
 	var numErrs int
 
-	n1, uuid1 := node.Addr{Host: "127.0.0.1", Port: 1}, newNodeID()
+	n1, uuid1 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}, newNodeID()
 	require.NoError(t, vw.RingAdd(n1, uuid1))
 
-	n2, uuid2 := node.Addr{Host: "127.0.0.1", Port: 1}, remoting.NodeId{
+	n2, uuid2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}, remoting.NodeId{
 		High: uuid1.High,
 		Low:  uuid1.Low,
 	}
@@ -291,7 +290,7 @@ func TestView_NodeUniqueIDNoDeletions(t *testing.T) {
 	}
 	require.Equal(t, 2, numErrs)
 
-	n3 := node.Addr{Host: "127.0.0.1", Port: 2}
+	n3 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 2}
 	// different host, same id
 	if assert.Error(t, vw.RingAdd(n3, uuid2)) {
 		numErrs++
@@ -305,10 +304,10 @@ func TestView_NodeUniqueIDNoDeletions(t *testing.T) {
 func TestView_NodeUniqueIDWithDeletions(t *testing.T) {
 	vw := NewView(k, nil, nil)
 
-	n1, uuid1 := node.Addr{Host: "127.0.0.1", Port: 1}, newNodeID()
+	n1, uuid1 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1}, newNodeID()
 	require.NoError(t, vw.RingAdd(n1, uuid1))
 
-	n2, uuid2 := node.Addr{Host: "127.0.0.1", Port: 2}, newNodeID()
+	n2, uuid2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 2}, newNodeID()
 	require.NoError(t, vw.RingAdd(n2, uuid2))
 	// remove node from the ring
 	require.NoError(t, vw.RingDel(n2))
@@ -327,7 +326,7 @@ func TestView_NodeConfigurationChange(t *testing.T) {
 	const numNodes = 1000
 	set := make(map[int64]struct{}, numNodes)
 	for i := 0; i < numNodes; i++ {
-		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		require.NoError(t, vw.RingAdd(n, nodeIDFromUUID(uuid.NewMD5(uuid.NIL, []byte(n.String())))))
 		set[vw.ConfigurationID()] = struct{}{}
 	}
@@ -343,13 +342,13 @@ func TestView_NodeConfigurationsAcrossMViews(t *testing.T) {
 	list2 := make([]int64, 0, numNodes)
 
 	for i := 0; i < numNodes; i++ {
-		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		require.NoError(t, vw1.RingAdd(n, nodeIDFromUUID(uuid.NewMD5(uuid.NIL, []byte(n.String())))))
 		list1[i] = vw1.ConfigurationID()
 	}
 
 	for i := numNodes - 1; i > -1; i-- {
-		n := node.Addr{Host: "127.0.0.1", Port: int32(i)}
+		n := &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(i)}
 		require.NoError(t, vw2.RingAdd(n, nodeIDFromUUID(uuid.NewMD5(uuid.NIL, []byte(n.String())))))
 		list2 = append(list2, vw2.ConfigurationID())
 	}

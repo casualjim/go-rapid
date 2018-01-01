@@ -2,9 +2,7 @@ package membership
 
 import (
 	"errors"
-	"fmt"
 
-	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 )
 
@@ -14,8 +12,8 @@ func NewWatermarkBuffer(k, h, l int) *WatermarkBuffer {
 		k:              k,
 		h:              h,
 		l:              l,
-		reportsPerHost: make(map[node.Addr]map[int32]node.Addr, 150),
-		preProposal:    make(map[node.Addr]struct{}, 150),
+		reportsPerHost: make(map[*remoting.Endpoint]map[int32]*remoting.Endpoint, 150),
+		preProposal:    make(map[*remoting.Endpoint]struct{}, 150),
 	}
 }
 
@@ -24,9 +22,9 @@ type WatermarkBuffer struct {
 	k, h, l           int
 	proposalCount     int
 	updatesInProgress int
-	reportsPerHost    map[node.Addr]map[int32]node.Addr
-	proposals         []node.Addr
-	preProposal       map[node.Addr]struct{}
+	reportsPerHost    map[*remoting.Endpoint]map[int32]*remoting.Endpoint
+	proposals         []*remoting.Endpoint
+	preProposal       map[*remoting.Endpoint]struct{}
 	seenLinkDown      bool
 }
 
@@ -53,32 +51,22 @@ func (b *WatermarkBuffer) Clear() {
 // AggregateForProposal applies a LinkUpdateMessage against the Watermark filter. When an update moves a host
 // past the H threshold of reports, and no other host has between H and L reports, the
 // method returns a view change proposal.
-func (b *WatermarkBuffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]node.Addr, error) {
+func (b *WatermarkBuffer) AggregateForProposal(msg *remoting.LinkUpdateMessage) ([]*remoting.Endpoint, error) {
 	if msg == nil {
 		return nil, errors.New("watermark aggregate: expected msg to not be nil")
 	}
 
-	lnkSrc, err := node.ParseAddr(msg.GetLinkSrc())
-	if err != nil {
-		return nil, fmt.Errorf("watermark aggregate link src: %v", err)
-	}
-
-	lnkDst, err := node.ParseAddr(msg.GetLinkDst())
-	if err != nil {
-		return nil, fmt.Errorf("watermark aggregate link dst: %v", err)
-	}
-
-	var proposals []node.Addr
+	var proposals []*remoting.Endpoint
 	for _, rn := range msg.GetRingNumber() {
 		proposals = append(proposals,
-			b.aggregateForProposal(lnkSrc, lnkDst, rn, msg.GetLinkStatus())...,
+			b.aggregateForProposal(msg.GetLinkSrc(), msg.GetLinkDst(), rn, msg.GetLinkStatus())...,
 		)
 	}
 
 	return proposals, nil
 }
 
-func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNumber int32, status remoting.LinkStatus) []node.Addr {
+func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst *remoting.Endpoint, ringNumber int32, status remoting.LinkStatus) []*remoting.Endpoint {
 
 	if status == remoting.LinkStatus_DOWN {
 		b.seenLinkDown = true
@@ -86,7 +74,7 @@ func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNum
 
 	reportsForHost, ok := b.reportsPerHost[lnkDst]
 	if !ok || reportsForHost == nil {
-		reportsForHost = make(map[int32]node.Addr, b.k)
+		reportsForHost = make(map[int32]*remoting.Endpoint, b.k)
 		b.reportsPerHost[lnkDst] = reportsForHost
 	}
 
@@ -98,7 +86,7 @@ func (b *WatermarkBuffer) aggregateForProposal(lnkSrc, lnkDst node.Addr, ringNum
 	return b.calculateAggregate(len(reportsForHost), lnkDst)
 }
 
-func (b *WatermarkBuffer) calculateAggregate(numReportsForHost int, lnkDst node.Addr) []node.Addr {
+func (b *WatermarkBuffer) calculateAggregate(numReportsForHost int, lnkDst *remoting.Endpoint) []*remoting.Endpoint {
 	if numReportsForHost == b.l {
 		b.updatesInProgress++
 		b.preProposal[lnkDst] = struct{}{}
@@ -122,12 +110,12 @@ func (b *WatermarkBuffer) calculateAggregate(numReportsForHost int, lnkDst node.
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *WatermarkBuffer) InvalidateFailingLinks(view *View) ([]node.Addr, error) {
+func (b *WatermarkBuffer) InvalidateFailingLinks(view *View) ([]*remoting.Endpoint, error) {
 	if !b.seenLinkDown {
 		return nil, nil
 	}
 
-	var proposalsToReturn []node.Addr
+	var proposalsToReturn []*remoting.Endpoint
 	for nodeInFlux := range b.preProposal {
 		var ringNumber int32
 		for _, monitor := range view.MonitorsForNode(nodeInFlux) {
@@ -141,12 +129,12 @@ func (b *WatermarkBuffer) InvalidateFailingLinks(view *View) ([]node.Addr, error
 	return proposalsToReturn, nil
 }
 
-func hasPreproposal(addrs map[node.Addr]struct{}, addr node.Addr) bool {
+func hasPreproposal(addrs map[*remoting.Endpoint]struct{}, addr *remoting.Endpoint) bool {
 	_, ok := addrs[addr]
 	return ok
 }
 
-func hasProposal(addrs []node.Addr, addr node.Addr) bool {
+func hasProposal(addrs []*remoting.Endpoint, addr *remoting.Endpoint) bool {
 	for _, candidate := range addrs {
 		if candidate == addr {
 			return true

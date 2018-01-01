@@ -1,17 +1,21 @@
-package node
+package membership
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/casualjim/go-rapid/remoting"
+)
 
 // MetadataRegistry per-node metadata which is immutable.
 // These are simple tags like roles or other configuration parameters.
 type MetadataRegistry struct {
-	table map[Addr]map[string]string
+	table map[*remoting.Endpoint]map[string]string
 }
 
 // NewMetadataRegistry creates a new initialized Metadata object
 func NewMetadataRegistry() *MetadataRegistry {
 	return &MetadataRegistry{
-		table: make(map[Addr]map[string]string, 150),
+		table: make(map[*remoting.Endpoint]map[string]string, 150),
 	}
 }
 
@@ -25,8 +29,8 @@ func (m *MetadataRegistry) All() map[string]map[string]string {
 }
 
 // Get the metadata for the specified node
-func (m *MetadataRegistry) Get(node Addr) (map[string]string, bool, error) {
-	if node.Host == "" {
+func (m *MetadataRegistry) Get(node *remoting.Endpoint) (map[string]string, bool, error) {
+	if node == nil || node.Hostname == "" {
 		return nil, false, errors.New("node metadata get: node host and port values are required")
 	}
 
@@ -43,8 +47,8 @@ func (m *MetadataRegistry) Get(node Addr) (map[string]string, bool, error) {
 }
 
 // Add the metadata for a node
-func (m *MetadataRegistry) Add(node Addr, data map[string]string) (bool, error) {
-	if node.Host == "" {
+func (m *MetadataRegistry) Add(node *remoting.Endpoint, data map[string]string) (bool, error) {
+	if node == nil || node.Hostname == "" {
 		return false, errors.New("node metadata set: node host and port values are required")
 	}
 	if data == nil {
@@ -65,8 +69,8 @@ func (m *MetadataRegistry) Add(node Addr, data map[string]string) (bool, error) 
 }
 
 // Del the metadata for a node
-func (m *MetadataRegistry) Del(node Addr) error {
-	if node.Host == "" {
+func (m *MetadataRegistry) Del(node *remoting.Endpoint) error {
+	if node == nil || node.Hostname == "" {
 		return errors.New("node metadata del: node host and port values are required")
 	}
 	delete(m.table, node)

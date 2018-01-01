@@ -5,19 +5,26 @@ import (
 	"fmt"
 
 	"github.com/OneOfOne/xxhash"
-	"github.com/casualjim/go-rapid/node"
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/emirpasic/gods/sets/treeset"
 	"github.com/pborman/uuid"
 )
 
+func epChecksum(ep *remoting.Endpoint, seed int) int {
+	var hash = xxhash.ChecksumString64S(ep.GetHostname(), uint64(seed))
+	prt := make([]byte, 4)
+	binary.BigEndian.PutUint32(prt, uint32(ep.GetPort()))
+	hash = hash*37 + xxhash.Checksum64S(prt, uint64(seed))
+	return int(hash)
+}
+
 func addressComparator(seed int) func(interface{}, interface{}) int {
 	return func(left, right interface{}) int {
-		l := left.(node.Addr)
-		r := right.(node.Addr)
+		l := left.(*remoting.Endpoint)
+		r := right.(*remoting.Endpoint)
 
-		hcl := l.Checksum(seed)
-		hcr := r.Checksum(seed)
+		hcl := epChecksum(l, seed)
+		hcr := epChecksum(r, seed)
 
 		if hcl > hcr {
 			return 1
@@ -54,7 +61,7 @@ func nodeIDComparator(left, right interface{}) int {
 }
 
 // NewView creates a new view
-func NewView(k int, nodeIDs []remoting.NodeId, nodeAddrs []node.Addr) *View {
+func NewView(k int, nodeIDs []remoting.NodeId, nodeAddrs []*remoting.Endpoint) *View {
 	seenIdentifiers := treeset.NewWith(nodeIDComparator)
 	for _, nodeID := range nodeIDs {
 		seenIdentifiers.Add(nodeID)
@@ -91,7 +98,7 @@ type View struct {
 // MonitorsForNode checks if the node is present,
 // when present it returns the known monitors of node
 // when not present it will return the expected monitors of a node
-func (v *View) MonitorsForNode(addr node.Addr) []node.Addr {
+func (v *View) MonitorsForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
 	if v.IsKnownMember(addr) {
 		return v.knownMonitorsForNode(addr)
 	}
@@ -101,7 +108,7 @@ func (v *View) MonitorsForNode(addr node.Addr) []node.Addr {
 // LinkStatusForNode checks if the node is present.
 // When present it returns the link status as down
 // When not present it return sthe link status as up
-func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
+func (v *View) LinkStatusForNode(addr *remoting.Endpoint) remoting.LinkStatus {
 	if v.IsKnownMember(addr) {
 		return remoting.LinkStatus_DOWN
 	}
@@ -109,7 +116,7 @@ func (v *View) LinkStatusForNode(addr node.Addr) remoting.LinkStatus {
 }
 
 // IsSafeToJoin queries if a host with a logical identifier is safe to add to the network.
-func (v *View) IsSafeToJoin(addr node.Addr, id remoting.NodeId) remoting.JoinStatusCode {
+func (v *View) IsSafeToJoin(addr *remoting.Endpoint, id remoting.NodeId) remoting.JoinStatusCode {
 	if v.IsKnownMember(addr) {
 		return remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING
 	}
@@ -120,7 +127,7 @@ func (v *View) IsSafeToJoin(addr node.Addr, id remoting.NodeId) remoting.JoinSta
 }
 
 // RingAdd a node to all K rings and records its unique identifier
-func (v *View) RingAdd(addr node.Addr, id remoting.NodeId) error {
+func (v *View) RingAdd(addr *remoting.Endpoint, id remoting.NodeId) error {
 	if v.IsKnownIdentifier(id) {
 		return fmt.Errorf("host add attempt with identifier already seen: {host: %s, identifier: %v}", addr, id)
 	}
@@ -136,7 +143,7 @@ func (v *View) RingAdd(addr node.Addr, id remoting.NodeId) error {
 }
 
 // RingDel a host from all K rings.
-func (v *View) RingDel(addr node.Addr) error {
+func (v *View) RingDel(addr *remoting.Endpoint) error {
 	if !v.IsKnownMember(addr) {
 		return &NodeNotInRingError{Node: addr}
 	}
@@ -158,23 +165,23 @@ func (v *View) IsKnownIdentifier(id remoting.NodeId) bool {
 }
 
 // IsKnownMember returns whether a host is part of the current membership set or not
-func (v *View) IsKnownMember(addr node.Addr) bool {
+func (v *View) IsKnownMember(addr *remoting.Endpoint) bool {
 	return v.rings[0].Contains(addr)
 }
 
 // KnownMonitorsForNode returns the set of monitors for the specified node
-func (v *View) KnownMonitorsForNode(addr node.Addr) ([]node.Addr, error) {
+func (v *View) KnownMonitorsForNode(addr *remoting.Endpoint) ([]*remoting.Endpoint, error) {
 	if !v.IsKnownMember(addr) {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
 	return v.knownMonitorsForNode(addr), nil
 }
 
-func (v *View) knownMonitorsForNode(addr node.Addr) []node.Addr {
+func (v *View) knownMonitorsForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
 	if v.rings[0].Size() <= 1 {
 		return nil
 	}
-	var monitors []node.Addr
+	var monitors []*remoting.Endpoint
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
 		val, found := higher(lst, addr)
@@ -185,51 +192,51 @@ func (v *View) knownMonitorsForNode(addr node.Addr) []node.Addr {
 	return monitors
 }
 
-func higher(lst *treeset.Set, addr node.Addr) (successor node.Addr, found bool) {
+func higher(lst *treeset.Set, addr *remoting.Endpoint) (successor *remoting.Endpoint, found bool) {
 	iter := lst.Iterator()
 	for iter.Next() {
 		if iter.Value() == addr {
 			if iter.Next() {
-				return iter.Value().(node.Addr), true
+				return iter.Value().(*remoting.Endpoint), true
 			}
 			break
 		}
 	}
 	if iter.First() {
-		return iter.Value().(node.Addr), true
+		return iter.Value().(*remoting.Endpoint), true
 	}
-	return node.Addr{}, false
+	return nil, false
 }
 
-func lower(lst *treeset.Set, addr node.Addr) (predecessor node.Addr, found bool) {
+func lower(lst *treeset.Set, addr *remoting.Endpoint) (predecessor *remoting.Endpoint, found bool) {
 	iter := lst.Iterator()
 	for iter.Next() {
 		if iter.Value() == addr {
 			if iter.Prev() { // peek for next
-				return iter.Value().(node.Addr), true
+				return iter.Value().(*remoting.Endpoint), true
 			}
 			break
 		}
 	}
 	if iter.Last() {
-		return iter.Value().(node.Addr), true
+		return iter.Value().(*remoting.Endpoint), true
 	}
-	return node.Addr{}, false
+	return nil, false
 }
 
 // KnownMonitoreesForNode returns the set of nodes monitored by the specified node
-func (v *View) KnownMonitoreesForNode(addr node.Addr) ([]node.Addr, error) {
+func (v *View) KnownMonitoreesForNode(addr *remoting.Endpoint) ([]*remoting.Endpoint, error) {
 	if !v.IsKnownMember(addr) {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
 	return v.knownMonitoreesForNode(addr), nil
 }
 
-func (v *View) knownMonitoreesForNode(addr node.Addr) []node.Addr {
+func (v *View) knownMonitoreesForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
 	if v.rings[0].Size() <= 1 {
 		return nil
 	}
-	var monitorees []node.Addr
+	var monitorees []*remoting.Endpoint
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
 
@@ -244,11 +251,11 @@ func (v *View) knownMonitoreesForNode(addr node.Addr) []node.Addr {
 // ExpectedMonitorsForNode returns the expected monitors of {@code node}, even before it is
 // added to the ring. Used during the bootstrap protocol to identify
 // the nodes responsible for gatekeeping a joining peer.
-func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {
+func (v *View) ExpectedMonitorsForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
 	if v.rings[0].Size() == 0 {
 		return nil
 	}
-	var monitors []node.Addr
+	var monitors []*remoting.Endpoint
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
 
@@ -261,17 +268,17 @@ func (v *View) ExpectedMonitorsForNode(addr node.Addr) []node.Addr {
 }
 
 // GetRing gets the list of hosts in the k'th ring.
-func (v *View) GetRing(k int) []node.Addr {
-	addrs := make([]node.Addr, v.rings[0].Size())
+func (v *View) GetRing(k int) []*remoting.Endpoint {
+	addrs := make([]*remoting.Endpoint, v.rings[0].Size())
 	v.rings[0].Each(func(i int, v interface{}) {
-		addrs[i] = v.(node.Addr)
+		addrs[i] = v.(*remoting.Endpoint)
 	})
 	return addrs
 }
 
 // RingNumbers of a monitor for a given monitoree
 // such that monitoree is a successor of monitor on ring[k].
-func (v *View) RingNumbers(monitor, monitoree node.Addr) []int {
+func (v *View) RingNumbers(monitor, monitoree *remoting.Endpoint) []int {
 	monitorees := v.knownMonitoreesForNode(monitor)
 	if len(monitorees) == 0 {
 		return nil
@@ -319,11 +326,11 @@ func configurationIDFromTreeset(identifiers, nodes *treeset.Set) int64 {
 	})
 
 	nodes.Each(func(i int, v interface{}) {
-		addr := v.(node.Addr)
+		addr := v.(*remoting.Endpoint)
 		prt := make([]byte, 4)
 		binary.BigEndian.PutUint32(prt, uint32(addr.Port))
 
-		hash = hash*37 + xxhash.ChecksumString64(addr.Host)
+		hash = hash*37 + xxhash.ChecksumString64(addr.Hostname)
 		hash = hash*37 + xxhash.Checksum64(prt)
 	})
 	return int64(hash)
@@ -342,10 +349,10 @@ func NewConfiguration(identifiers, nodes *treeset.Set) *Configuration {
 		hash = hash*37 + xxhash.Checksum64(hb)
 		hash = hash*37 + xxhash.Checksum64(lb)
 	})
-	nds := make([]node.Addr, nodes.Size())
+	nds := make([]*remoting.Endpoint, nodes.Size())
 	nodes.Each(func(i int, v interface{}) {
-		nds[i] = v.(node.Addr)
-		hash = hash*37 + xxhash.ChecksumString64(nds[i].Host)
+		nds[i] = v.(*remoting.Endpoint)
+		hash = hash*37 + xxhash.ChecksumString64(nds[i].Hostname)
 		prt := make([]byte, 4)
 		binary.BigEndian.PutUint32(prt, uint32(nds[i].Port))
 		hash = hash*37 + xxhash.Checksum64(prt)
@@ -363,13 +370,13 @@ func NewConfiguration(identifiers, nodes *treeset.Set) *Configuration {
 // to bootstrap an identical membership.View object.
 type Configuration struct {
 	Identifiers []remoting.NodeId
-	Nodes       []node.Addr
+	Nodes       []*remoting.Endpoint
 	ConfigID    int64
 }
 
 // NodeAlreadInRingError contains the node address that is already in the ring
 type NodeAlreadInRingError struct {
-	Node node.Addr
+	Node *remoting.Endpoint
 }
 
 func (n *NodeAlreadInRingError) Error() string {
@@ -378,7 +385,7 @@ func (n *NodeAlreadInRingError) Error() string {
 
 // NodeNotInRingError contains the node address that can't be found in the ring
 type NodeNotInRingError struct {
-	Node node.Addr
+	Node *remoting.Endpoint
 }
 
 func (n *NodeNotInRingError) Error() string {

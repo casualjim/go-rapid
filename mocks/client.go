@@ -4,10 +4,6 @@
 package mocks
 
 import (
-	context "context"
-
-	node "github.com/casualjim/go-rapid/node"
-	remoting "github.com/casualjim/go-rapid/remoting"
 	gomock "github.com/golang/mock/gomock"
 )
 
@@ -32,79 +28,4 @@ func NewMockClient(ctrl *gomock.Controller) *MockClient {
 // EXPECT returns an object that allows the caller to indicate expected use
 func (_m *MockClient) EXPECT() *MockClientMockRecorder {
 	return _m.recorder
-}
-
-// SendConsensusProposal mocks base method
-func (_m *MockClient) SendConsensusProposal(_param0 context.Context, _param1 node.Addr, _param2 *remoting.ConsensusProposal) (*remoting.ConsensusProposalResponse, error) {
-	ret := _m.ctrl.Call(_m, "SendConsensusProposal", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.ConsensusProposalResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendConsensusProposal indicates an expected call of SendConsensusProposal
-func (_mr *MockClientMockRecorder) SendConsensusProposal(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendConsensusProposal", arg0, arg1, arg2)
-}
-
-// SendJoinMessage mocks base method
-func (_m *MockClient) SendJoinMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.JoinMessage) (*remoting.JoinResponse, error) {
-	ret := _m.ctrl.Call(_m, "SendJoinMessage", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.JoinResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendJoinMessage indicates an expected call of SendJoinMessage
-func (_mr *MockClientMockRecorder) SendJoinMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendJoinMessage", arg0, arg1, arg2)
-}
-
-// SendLinkUpdateMessage mocks base method
-func (_m *MockClient) SendLinkUpdateMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.BatchedLinkUpdateMessage) (*remoting.Response, error) {
-	ret := _m.ctrl.Call(_m, "SendLinkUpdateMessage", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.Response)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendLinkUpdateMessage indicates an expected call of SendLinkUpdateMessage
-func (_mr *MockClientMockRecorder) SendLinkUpdateMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendLinkUpdateMessage", arg0, arg1, arg2)
-}
-
-// SendPreJoinMessage mocks base method
-func (_m *MockClient) SendPreJoinMessage(_param0 context.Context, _param1 node.Addr, _param2 *remoting.PreJoinMessage) (*remoting.JoinResponse, error) {
-	ret := _m.ctrl.Call(_m, "SendPreJoinMessage", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.JoinResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendPreJoinMessage indicates an expected call of SendPreJoinMessage
-func (_mr *MockClientMockRecorder) SendPreJoinMessage(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendPreJoinMessage", arg0, arg1, arg2)
-}
-
-// SendProbe mocks base method
-func (_m *MockClient) SendProbe(_param0 context.Context, _param1 node.Addr, _param2 *remoting.ProbeMessage) (*remoting.ProbeResponse, error) {
-	ret := _m.ctrl.Call(_m, "SendProbe", _param0, _param1, _param2)
-	ret0, _ := ret[0].(*remoting.ProbeResponse)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// SendProbe indicates an expected call of SendProbe
-func (_mr *MockClientMockRecorder) SendProbe(arg0, arg1, arg2 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "SendProbe", arg0, arg1, arg2)
-}
-
-// UpdateLongLivedConnections mocks base method
-func (_m *MockClient) UpdateLongLivedConnections(_param0 []node.Addr) {
-	_m.ctrl.Call(_m, "UpdateLongLivedConnections", _param0)
-}
-
-// UpdateLongLivedConnections indicates an expected call of UpdateLongLivedConnections
-func (_mr *MockClientMockRecorder) UpdateLongLivedConnections(arg0 interface{}) *gomock.Call {
-	return _mr.mock.ctrl.RecordCall(_mr.mock, "UpdateLongLivedConnections", arg0)
 }

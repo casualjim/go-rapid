@@ -1,113 +1,100 @@
 package broadcast
 
-import (
-	"context"
-	"sync"
-	"testing"
+// func TestUnicastAll_BatchUpdate(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	rapid "github.com/casualjim/go-rapid"
-	"github.com/casualjim/go-rapid/mocks"
-	"github.com/casualjim/go-rapid/node"
-	"github.com/casualjim/go-rapid/remoting"
-	"github.com/golang/mock/gomock"
-	"github.com/stretchr/testify/assert"
-)
+// 	ctx := context.Background()
 
-func TestUnicastAll_BatchUpdate(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
+// 	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
+// 	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
 
-	ctx := context.Background()
+// 	members := []node.Addr{addr1, addr2, addr3}
+// 	msg := new(remoting.BatchedLinkUpdateMessage)
+// 	msg.Sender = "127.0.0.1:4"
+// 	msg.Messages = []*remoting.LinkUpdateMessage{
+// 		&remoting.LinkUpdateMessage{LinkStatus: remoting.LinkStatus_UP},
+// 	}
 
-	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
-	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
-	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
+// 	client := mocks.NewMockClient(ctrl)
+// 	gomock.InOrder(
+// 		client.EXPECT().SendLinkUpdateMessage(ctx, addr1, msg).Return(nil, nil),
+// 		client.EXPECT().SendLinkUpdateMessage(ctx, addr2, msg).Return(nil, nil),
+// 		client.EXPECT().SendLinkUpdateMessage(ctx, addr3, msg).Return(nil, nil),
+// 	)
 
-	members := []node.Addr{addr1, addr2, addr3}
-	msg := new(remoting.BatchedLinkUpdateMessage)
-	msg.Sender = "127.0.0.1:4"
-	msg.Messages = []*remoting.LinkUpdateMessage{
-		&remoting.LinkUpdateMessage{LinkStatus: remoting.LinkStatus_UP},
-	}
+// 	broadcast := &unicastFiltered{
+// 		Filter:  MatchAll,
+// 		lock:    &sync.RWMutex{},
+// 		client:  client,
+// 		log:     rapid.NOOPLogger,
+// 		members: members,
+// 	}
 
-	client := mocks.NewMockClient(ctrl)
-	gomock.InOrder(
-		client.EXPECT().SendLinkUpdateMessage(ctx, addr1, msg).Return(nil, nil),
-		client.EXPECT().SendLinkUpdateMessage(ctx, addr2, msg).Return(nil, nil),
-		client.EXPECT().SendLinkUpdateMessage(ctx, addr3, msg).Return(nil, nil),
-	)
+// 	broadcast.BatchUpdate(ctx, msg)
+// }
 
-	broadcast := &unicastFiltered{
-		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
-		client:  client,
-		log:     rapid.NOOPLogger,
-		members: members,
-	}
+// func TestUnicastAll_ConsensusProposal(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	broadcast.BatchUpdate(ctx, msg)
-}
+// 	ctx := context.Background()
 
-func TestUnicastAll_ConsensusProposal(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
+// 	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
+// 	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
 
-	ctx := context.Background()
+// 	members := []node.Addr{addr1, addr2, addr3}
+// 	msg := new(remoting.ConsensusProposal)
+// 	msg.ConfigurationId = 123
+// 	for _, a := range members {
+// 		msg.Hosts = append(msg.Hosts, a.String())
+// 	}
 
-	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
-	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
-	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
+// 	client := mocks.NewMockClient(ctrl)
+// 	gomock.InOrder(
+// 		client.EXPECT().SendConsensusProposal(ctx, addr1, msg).Return(nil, nil),
+// 		client.EXPECT().SendConsensusProposal(ctx, addr2, msg).Return(nil, nil),
+// 		client.EXPECT().SendConsensusProposal(ctx, addr3, msg).Return(nil, nil),
+// 	)
 
-	members := []node.Addr{addr1, addr2, addr3}
-	msg := new(remoting.ConsensusProposal)
-	msg.ConfigurationId = 123
-	for _, a := range members {
-		msg.Hosts = append(msg.Hosts, a.String())
-	}
+// 	broadcast := &unicastFiltered{
+// 		Filter:  MatchAll,
+// 		lock:    &sync.RWMutex{},
+// 		client:  client,
+// 		log:     rapid.NOOPLogger,
+// 		members: members,
+// 	}
 
-	client := mocks.NewMockClient(ctrl)
-	gomock.InOrder(
-		client.EXPECT().SendConsensusProposal(ctx, addr1, msg).Return(nil, nil),
-		client.EXPECT().SendConsensusProposal(ctx, addr2, msg).Return(nil, nil),
-		client.EXPECT().SendConsensusProposal(ctx, addr3, msg).Return(nil, nil),
-	)
+// 	broadcast.ConsensusProposal(ctx, msg)
+// }
 
-	broadcast := &unicastFiltered{
-		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
-		client:  client,
-		log:     rapid.NOOPLogger,
-		members: members,
-	}
+// func TestUnicastAll_SetMembership(t *testing.T) {
+// 	ctrl := gomock.NewController(t)
+// 	defer ctrl.Finish()
 
-	broadcast.ConsensusProposal(ctx, msg)
-}
+// 	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
+// 	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
+// 	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
+// 	members := []node.Addr{addr1, addr2, addr3}
 
-func TestUnicastAll_SetMembership(t *testing.T) {
-	ctrl := gomock.NewController(t)
-	defer ctrl.Finish()
+// 	client := mocks.NewMockClient(ctrl)
+// 	broadcast := &unicastFiltered{
+// 		Filter:  MatchAll,
+// 		lock:    &sync.RWMutex{},
+// 		client:  client,
+// 		log:     rapid.NOOPLogger,
+// 		members: members,
+// 	}
 
-	addr1 := node.Addr{Host: "127.0.0.1", Port: 1}
-	addr2 := node.Addr{Host: "127.0.0.1", Port: 2}
-	addr3 := node.Addr{Host: "127.0.0.1", Port: 3}
-	members := []node.Addr{addr1, addr2, addr3}
+// 	ad1 := node.Addr{Host: "127.0.0.1", Port: 11}
+// 	ad2 := node.Addr{Host: "127.0.0.1", Port: 12}
+// 	ad3 := node.Addr{Host: "127.0.0.1", Port: 13}
+// 	newMembers := []node.Addr{ad1, ad2, ad3}
 
-	client := mocks.NewMockClient(ctrl)
-	broadcast := &unicastFiltered{
-		Filter:  MatchAll,
-		lock:    &sync.RWMutex{},
-		client:  client,
-		log:     rapid.NOOPLogger,
-		members: members,
-	}
-
-	ad1 := node.Addr{Host: "127.0.0.1", Port: 11}
-	ad2 := node.Addr{Host: "127.0.0.1", Port: 12}
-	ad3 := node.Addr{Host: "127.0.0.1", Port: 13}
-	newMembers := []node.Addr{ad1, ad2, ad3}
-
-	broadcast.SetMembership(newMembers)
-	for i, mem := range newMembers {
-		assert.Equal(t, mem, broadcast.members[i])
-	}
-}
+// 	broadcast.SetMembership(newMembers)
+// 	for i, mem := range newMembers {
+// 		assert.Equal(t, mem, broadcast.members[i])
+// 	}
+// }

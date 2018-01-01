@@ -1,8 +1,9 @@
-package node
+package membership
 
 import (
 	"testing"
 
+	"github.com/casualjim/go-rapid/remoting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -10,16 +11,16 @@ import (
 func TestMetadata_Get_ErrorMissingHost(t *testing.T) {
 	md := NewMetadataRegistry()
 
-	_, _, err := md.Get(Addr{})
+	_, _, err := md.Get(nil)
 	assert.Error(t, err)
 }
 
 func TestMetadata_Get_Success(t *testing.T) {
-	addr := Addr{Host: "127.0.0.1", Port: 9493}
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 9493}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
 		},
@@ -33,11 +34,11 @@ func TestMetadata_Get_Success(t *testing.T) {
 }
 
 func TestMetadata_Get_Immutable(t *testing.T) {
-	addr := Addr{Host: "127.0.0.1", Port: 9493}
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 9493}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
 		},
@@ -54,19 +55,19 @@ func TestMetadata_Get_Immutable(t *testing.T) {
 func TestMetadata_Add_Errors(t *testing.T) {
 	md := NewMetadataRegistry()
 
-	_, err := md.Add(Addr{}, map[string]string{})
+	_, err := md.Add(&remoting.Endpoint{}, map[string]string{})
 	require.Error(t, err)
-	_, err = md.Add(Addr{Host: "127.0.0.1", Port: 4949}, nil)
+	_, err = md.Add(&remoting.Endpoint{Hostname: "127.0.0.1", Port: 4949}, nil)
 	require.Error(t, err)
 }
 
 func TestMetadata_Add_Success(t *testing.T) {
-	addr := Addr{Host: "127.0.0.1", Port: 9493}
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
-	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 9493}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
+	addr3 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 4444}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
 		},
@@ -80,11 +81,11 @@ func TestMetadata_Add_Success(t *testing.T) {
 	}
 }
 func TestMetadata_Add_IgnoreRepeated(t *testing.T) {
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
-	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
+	addr3 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 4444}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
 		},
@@ -98,12 +99,12 @@ func TestMetadata_Add_IgnoreRepeated(t *testing.T) {
 	}
 }
 func TestMetadata_Add_Immutable(t *testing.T) {
-	addr := Addr{Host: "127.0.0.1", Port: 9493}
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
-	addr3 := Addr{Host: "127.0.0.1", Port: 4444}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 9493}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
+	addr3 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 4444}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr2: map[string]string{"value": "original2"},
 			addr3: map[string]string{"value": "original3"},
 		},
@@ -122,16 +123,16 @@ func TestMetadata_Add_Immutable(t *testing.T) {
 func TestMetadata_Del_Errors(t *testing.T) {
 	md := NewMetadataRegistry()
 
-	err := md.Del(Addr{})
+	err := md.Del(&remoting.Endpoint{})
 	assert.Error(t, err)
 }
 
 func TestMetadata_Del_Success(t *testing.T) {
-	addr := Addr{Host: "127.0.0.1", Port: 9493}
-	addr2 := Addr{Host: "127.0.0.1", Port: 5555}
+	addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 9493}
+	addr2 := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 5555}
 
 	md := &MetadataRegistry{
-		table: map[Addr]map[string]string{
+		table: map[*remoting.Endpoint]map[string]string{
 			addr:  map[string]string{"value": "original"},
 			addr2: map[string]string{"value": "original2"},
 		},
