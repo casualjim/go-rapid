@@ -1,7 +1,7 @@
 # vim: ft=make
 
 GO ?= go
-GOVERSION ?= go1.9.2
+GOVERSION ?= go1.12.6
 SHELL := /bin/bash
 GIT_VERSION = $(shell git describe --tags)
 
@@ -9,9 +9,8 @@ GIT_VERSION = $(shell git describe --tags)
 
 .PHONY: check
 check: goversion checkfmt ## Runs static code analysis checks
-	@echo running metalint ...
-	gometalinter --vendored-linters --install
-	gometalinter --vendored-linters --vendor --disable=gotype --errors --fast --deadline=60s   ./...
+	@echo running golangci ...
+	golangci-lint run
 
 .PHONY: test
 test: ## Runs tests in all packages
@@ -21,12 +20,12 @@ test: ## Runs tests in all packages
 .PHONY: coverage
 coverage: check ## Runs coverage in all packages
 	@echo running coverage...
-	.travis/coverage
+	@gotestsum -f short-verbose -- -race -coverprofile=coverage.txt -covermode=atomic ./...
 
 .PHONY: update-deps
 update-deps: ## Updates the dependencies with flattened vendor and without test files
 	@echo updating deps...
-	@dep ensure -update
+	@go get -u $(go list -m)/...
 
 .PHONY: goversion
 goversion: ## Checks if installed go version is latest
@@ -58,18 +57,15 @@ go-generate: ## run go generate
 
 .PHONY: devtools
 devtools: ## install necessary tools for development
-	@echo installing golang dep tools
-	go get -u github.com/golang/dep/cmd/dep
+	@echo installing gotestsum
+	go get -u gotest.tools/gotestsum
+	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 	@echo installing grpc
 	go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
 	go get -u google.golang.org/grpc
-	go get -u github.com/gogo/protobuf/protoc-gen-gofast
-	go get -u github.com/gogo/protobuf/protoc-gen-gogofast
-	@echo installing mockgen
-	go get github.com/golang/mock/mockgen
-	@echo installing metalinter
-	go get -u github.com/alecthomas/gometalinter
-	gometalinter --install --update
+	go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
+	@echo installing mockery
+	go get github.com/vektra/mockery/cmd/mockery
 
 .PHONY: help
 help: ## Display make help

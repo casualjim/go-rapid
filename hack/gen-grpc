@@ -1,0 +1,42 @@
+#!/bin/bash
+
+set -eu -o pipefail +h
+
+brwhte="$(tput setaf 15)"
+brblue="$(tput setaf 12)"
+bryllw="$(tput setaf 11)"
+brprpl="$(tput setaf 13)"
+creset="$(tput sgr0)"
+
+warrow="${brprpl}=>${creset}"
+barrow="${brblue} =>${creset}"
+yarrow="${bryllw}  ->${creset}"
+
+function section() {
+  >&2 printf "${warrow} %s\n" "$*"
+}
+
+function task() {
+  >&2 printf "${barrow} %s\n" "$*"
+}
+
+function progress() {
+  >&2 printf "  ${yarrow} %s\n" "$*"
+}
+
+function partial_progress() {
+  >&2 printf "${yarrow} %s " "$*"
+}
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+section "generating rapid grpc api"
+
+GOPATH="${GOPATH-$(go env GOPATH)}"
+task "golang"
+progress "generating golang code"
+protoc \
+  -I=remoting \
+  -I="$(go env GOPATH)/src/github.com/gogo/protobuf" \
+  -I="$(go env GOPATH)/src/github.com/gogo/protobuf/protobuf" \
+  --gogoslick_out=plugins=grpc:remoting \
+  remoting/rapid.proto

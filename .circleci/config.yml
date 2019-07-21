@@ -1,0 +1,81 @@
+version: 2
+workflows:
+  version: 2
+  weekly:
+    triggers:
+      - schedule:
+          cron: "0 0 * * 6"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - debian_builder
+
+  build_and_test:
+    jobs:
+      - build
+jobs:
+  build:
+    docker:
+      - image: casualjim/rapidbuilder
+    steps:
+      - checkout
+
+      - restore_cache:
+          keys:
+            - go-mod-v1-{{ checksum "go.sum" }}
+
+      - run:
+          name: Download dependencies
+          command: |
+            n=0
+            until [ $n -ge 5 ]
+            do
+              go mod download && break
+              n=$[$n+1]
+              sleep 1
+            done
+
+      - save_cache:
+          key: go-mod-v1-{{ checksum "go.sum" }}
+          paths:
+            - "/go/pkg/mod"
+
+      - run:
+          name: Prepare directory layout
+          command: |
+            testresultsdir="/usr/share/testresults"
+            if [[ ! -d ${testresultsdir} ]] ; then
+              mkdir -p ${testresultsdir}
+            fi
+
+      - run:
+          name: Run unit tests with code coverage
+          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f short-verbose -- -timeout=20m -coverprofile=coverage.txt -covermode=atomic ./...
+          no_output_timeout: 30m
+
+      - run:
+          name: Run unit tests with race detection
+          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f short-verbose -- -race -timeout=20m ./...
+          no_output_timeout: 30m
+
+      - run:
+          name: Submit coverage results
+          command: bash <(curl -s https://codecov.io/bash)
+
+      - store_test_results:
+          path: /usr/share/testresults
+
+  debian_builder:
+    docker:
+      - image: circleci/python
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run:
+          name: Build debian builder image
+          command: |
+            docker build --pull -t casualjim/rapidbuilder .circleci/builder
+            echo $DOCKER_PASS | docker login -u $API_USERNAME --password-stdin
+            docker push casualjim/rapidbuilder
