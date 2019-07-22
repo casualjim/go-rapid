@@ -6,13 +6,12 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
 
 	"github.com/nayuta87/queue"
-
-	"github.com/cornelk/hashmap"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 
@@ -33,7 +32,13 @@ var (
 	batchingWindow                 = 100 * time.Millisecond
 	DefaultFailureDetectorInterval = 1 * time.Second
 
-	defaultResponse = &remoting.RapidResponse{}
+	defaultResponse = &remoting.RapidResponse{
+		Content: &remoting.RapidResponse_ProbeResponse{
+			ProbeResponse: &remoting.ProbeResponse{
+				Status: remoting.NodeStatus_OK,
+			},
+		},
+	}
 )
 
 // New creates a new membership service
@@ -59,6 +64,7 @@ func New(
 		failureDetectorInterval: failureDetectorInterval,
 		failureDetector:         failureDetector,
 		subscriptions:           subscriptions,
+		announcedProposal:       &atomicBool{v: 0},
 	}
 }
 
@@ -66,7 +72,7 @@ func New(
 type Service struct {
 	log               *zap.Logger
 	view              *View
-	announcedProposal bool
+	announcedProposal *atomicBool
 	me                api.Node
 
 	updateLock       sync.RWMutex
@@ -78,7 +84,7 @@ type Service struct {
 	metadata *node.MetadataRegistry
 
 	subscriptions *EventSubscriptions
-	paxos         *paxos.Fast
+	paxos         atomic.Value
 
 	// lastEnqueue  uint64
 	// tx           chan *remoting.AlertMessage
@@ -131,9 +137,7 @@ func (s *Service) Init() error {
 		0,
 	)
 	s.broadcaster.SetMembership(s.view.GetRing(0))
-	s.joinersToRespond = &joiners{
-		toRespondTo: make(map[remoting.Endpoint]chan chan *remoting.RapidResponse),
-	}
+	s.joinersToRespond = &joiners{}
 
 	if s.subscriptions == nil {
 		s.subscriptions = NewEventSubscriptions()
@@ -152,6 +156,7 @@ func (s *Service) Start() error {
 	s.broadcaster.Start()
 	s.alertBatcher.Start()
 
+	s.updateLock.Lock()
 	paxosInstance, err := paxos.New(
 		paxos.Address(s.me.Addr),
 		paxos.ConfigurationID(s.view.ConfigurationID()),
@@ -164,7 +169,9 @@ func (s *Service) Start() error {
 	if err != nil {
 		return err
 	}
-	s.paxos = paxosInstance
+
+	s.paxos.Store(paxosInstance)
+	s.updateLock.Unlock()
 	if err := s.createFailureDetectorsForCurrentConfiguration(); err != nil {
 		return err
 	}
@@ -194,7 +201,7 @@ func (s *Service) getInitialViewChange() []api.StatusChange {
 	for i, endpoint := range s.view.GetRing(0) {
 		res[i] = api.StatusChange{
 			Addr:     endpoint,
-			Status:   remoting.UP,
+			Status:   remoting.EdgeStatus_UP,
 			Metadata: s.metadata.MustGet(endpoint),
 		}
 	}
@@ -219,7 +226,7 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 			md, _, _ := s.metadata.Get(endpoint)
 			statusChanges = append(statusChanges, api.StatusChange{
 				Addr:     endpoint,
-				Status:   remoting.DOWN,
+				Status:   remoting.EdgeStatus_DOWN,
 				Metadata: md,
 			})
 			if err := s.metadata.Del(endpoint); err != nil {
@@ -246,18 +253,17 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 		}
 		statusChanges = append(statusChanges, api.StatusChange{
 			Addr:     endpoint,
-			Status:   remoting.UP,
+			Status:   remoting.EdgeStatus_UP,
 			Metadata: md,
 		})
 	}
-	s.updateLock.Unlock()
 
 	ccid := s.view.ConfigurationID()
 	// Publish an event to the listeners.
 	s.subscriptions.Trigger(api.ClusterEventViewChange, ccid, statusChanges)
 
 	s.cutDetector.Clear()
-	s.announcedProposal = false
+	s.announcedProposal.Set(true, false)
 	paxosInstance, err := paxos.New(
 		paxos.Address(s.me.Addr),
 		paxos.ConfigurationID(ccid),
@@ -270,7 +276,8 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 	if err != nil {
 		return err
 	}
-	s.paxos = paxosInstance
+	s.paxos.Store(paxosInstance)
+	s.updateLock.Unlock()
 	s.broadcaster.SetMembership(s.view.GetRing(0))
 
 	if s.view.IsHostPresent(s.me.Addr) {
@@ -293,7 +300,8 @@ func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
 	}
 
 	for _, subject := range subjects {
-		go s.edgeFailures.Schedule(subject)
+		subject := subject
+		go func() { s.edgeFailures.Schedule(subject) }()
 	}
 	return nil
 }
@@ -302,7 +310,7 @@ func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
 	config := s.view.configuration()
 	response := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
-		StatusCode:      remoting.SAFE_TO_JOIN,
+		StatusCode:      remoting.JoinStatusCode_SAFE_TO_JOIN,
 		ConfigurationId: config.ConfigID,
 		Endpoints:       config.Nodes,
 		Identifiers:     config.Identifiers,
@@ -311,7 +319,8 @@ func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
 
 	for _, node := range proposal {
 		if s.joinersToRespond.Has(node) {
-			s.joinersToRespond.Deque(node, remoting.WrapResponse(response))
+			resp := remoting.WrapResponse(response)
+			s.joinersToRespond.Deque(node, *resp)
 		}
 	}
 	return nil
@@ -343,7 +352,7 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 		msg := &remoting.AlertMessage{
 			EdgeSrc:         s.me.Addr,
 			EdgeDst:         endpoint,
-			EdgeStatus:      remoting.DOWN,
+			EdgeStatus:      remoting.EdgeStatus_DOWN,
 			RingNumber:      s.view.RingNumbers(s.me.Addr, endpoint),
 			ConfigurationId: configID,
 		}
@@ -368,7 +377,7 @@ func (s *Service) Handle(ctx context.Context, req *remoting.RapidRequest) (*remo
 		return defaultResponse, nil
 	default:
 		// try if this event is known by paxos
-		return s.paxos.Handle(ctx, req)
+		return s.paxos.Load().(*paxos.Fast).Handle(ctx, req)
 	}
 }
 
@@ -378,7 +387,7 @@ func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoi
 	s.log.Debug("got safe to join", zap.Stringer("status_code", statusCode))
 
 	var endpoints []*remoting.Endpoint
-	if statusCode == remoting.SAFE_TO_JOIN || statusCode == remoting.HOSTNAME_ALREADY_IN_RING {
+	if statusCode == remoting.JoinStatusCode_SAFE_TO_JOIN || statusCode == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		observers := s.view.ExpectedObserversOf(req.GetSender())
 		endpoints = append(endpoints, observers...)
 	}
@@ -402,38 +411,23 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 			zap.Int("size", s.view.Size()),
 		)
 
-		fut := make(chan *remoting.RapidResponse)
+		fut := make(chan remoting.RapidResponse)
 		s.joinersToRespond.GetOrAdd(req.GetSender(), fut)
 
-		s.log.Debug(
-			"added future to the joiners to respond",
-			zap.String("sender", epStr(req.GetSender())),
-		)
 		s.alertBatcher.Enqueue(&remoting.AlertMessage{
 			EdgeSrc:         s.me.Addr,
 			EdgeDst:         req.GetSender(),
-			EdgeStatus:      remoting.UP,
+			EdgeStatus:      remoting.EdgeStatus_UP,
 			ConfigurationId: ccid,
 			NodeId:          req.GetNodeId(),
 			RingNumber:      req.GetRingNumber(),
 			Metadata:        req.GetMetadata(),
 		})
-		s.log.Debug(
-			"enqueued alert message",
-			zap.String("sender", epStr(req.GetSender())),
-			zap.Int64("config", ccid),
-		)
 
 		select {
 		case resp := <-fut:
-			s.log.Debug("future was completed, replying")
-			return resp, nil
+			return &resp, nil
 		case <-ctx.Done():
-			s.log.Debug(
-				"future was canceled",
-				zap.String("sender", epStr(req.GetSender())),
-				zap.Int64("config", ccid),
-			)
 			return nil, context.Canceled
 		}
 	}
@@ -450,23 +444,21 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 	resp := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
 		ConfigurationId: ccid,
-		StatusCode:      remoting.CONFIG_CHANGED,
+		StatusCode:      remoting.JoinStatusCode_CONFIG_CHANGED,
 	}
 
 	if s.view.IsHostPresent(req.GetSender()) && s.view.IsIdentifierPresent(req.GetNodeId()) {
-		s.log.Debug("replying with safe to join")
-		resp.StatusCode = remoting.SAFE_TO_JOIN
+		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
 		resp.Endpoints = config.Nodes
 		resp.Identifiers = config.Identifiers
 	}
 
-	s.log.Debug("replying with join response", zap.String("resp", proto.CompactTextString(resp)))
 	return remoting.WrapResponse(resp), nil
 }
 
 func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.BatchedAlertMessage) (*remoting.RapidResponse, error) {
 	s.log.Debug("handling batched alert message", zap.String("batch", proto.CompactTextString(req)))
-	if s.announcedProposal {
+	if s.announcedProposal.Value() {
 		s.log.Debug("replying with default response, because already announced")
 		return defaultResponse, nil
 	}
@@ -474,7 +466,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	ccid := s.view.ConfigurationID()
 	memSize := s.view.Size()
 	endpoints := &endpointSet{
-		data: make(map[*remoting.Endpoint]bool),
+		data: make(map[uint64]*remoting.Endpoint),
 	}
 	s.log.Debug("preparing proposal for join")
 	for _, msg := range req.GetMessages() {
@@ -482,7 +474,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 			continue
 		}
 
-		if msg.GetEdgeStatus() == remoting.UP {
+		if msg.GetEdgeStatus() == remoting.EdgeStatus_UP {
 			s.joiners.Set(
 				msg.GetEdgeDst(),
 				joiner{
@@ -512,7 +504,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	}
 
 	s.log.Debug(("announcing proposal"))
-	s.announcedProposal = true
+	s.announcedProposal.Set(false, true)
 	proposal := endpoints.Values()
 	var nodeStatusChangeList []api.StatusChange
 	q := s.subscriptions.get(api.ClusterEventViewChangeProposal)
@@ -526,7 +518,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 			v.(api.Subscriber).OnNodeStatusChange(ccid, nodeStatusChangeList)
 		}
 	}
-	s.paxos.Propose(ctx, proposal, 0)
+	s.paxos.Load().(*paxos.Fast).Propose(ctx, proposal, 0)
 
 	return defaultResponse, nil
 }
@@ -534,9 +526,9 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 func (s *Service) createNodeStatusChangeList(proposal []*remoting.Endpoint) []api.StatusChange {
 	list := make([]api.StatusChange, len(proposal))
 	for i, p := range proposal {
-		status := remoting.UP
+		status := remoting.EdgeStatus_UP
 		if s.view.IsHostPresent(p) {
-			status = remoting.DOWN
+			status = remoting.EdgeStatus_DOWN
 		}
 
 		sc := api.StatusChange{Addr: p, Status: status}
@@ -559,12 +551,12 @@ func (s *Service) filterAlertMessage(batched *remoting.BatchedAlertMessage, msg 
 		return false
 	}
 
-	if msg.GetEdgeStatus() == remoting.UP && s.view.IsHostPresent(dest) {
+	if msg.GetEdgeStatus() == remoting.EdgeStatus_UP && s.view.IsHostPresent(dest) {
 		log.Debug("alert message with status UP received")
 		return false
 	}
 
-	if msg.GetEdgeStatus() == remoting.DOWN && !s.view.IsHostPresent(dest) {
+	if msg.GetEdgeStatus() == remoting.EdgeStatus_DOWN && !s.view.IsHostPresent(dest) {
 		log.Debug("alert message with status DOWN received, already in configuration")
 		return false
 	}
@@ -661,58 +653,60 @@ func epStr(eps ...*remoting.Endpoint) string {
 }
 
 type joiners struct {
-	lock        sync.Mutex
-	toRespondTo map[remoting.Endpoint]chan chan *remoting.RapidResponse
+	// toRespondTo map[uint64]chan chan *remoting.RapidResponse
+	data sync.Map
 }
 
-func (j *joiners) GetOrAdd(key *remoting.Endpoint, fut chan *remoting.RapidResponse) {
-	var res chan chan *remoting.RapidResponse
-	j.lock.Lock()
+func (j *joiners) key(ep *remoting.Endpoint) uint64 {
+	return epchecksum.Checksum(ep, 0)
+}
 
-	k := *key
-	if v, ok := j.toRespondTo[k]; !ok {
-		res = make(chan chan *remoting.RapidResponse, 500)
-		j.toRespondTo[k] = res
+func (j *joiners) GetOrAdd(key *remoting.Endpoint, fut chan remoting.RapidResponse) {
+	var res chan chan remoting.RapidResponse
+	// j.lock.Lock()
+
+	k := j.key(key)
+	if v, ok := j.data.Load(k); !ok {
+		res = make(chan chan remoting.RapidResponse, 500)
+		j.data.Store(k, res)
 	} else {
-		res = v
+		res = v.(chan chan remoting.RapidResponse)
 	}
-	j.lock.Unlock()
+	// j.lock.Unlock()
 
 	res <- fut
 }
 
-func (j *joiners) Enqueue(key *remoting.Endpoint, resp chan *remoting.RapidResponse) {
-	j.lock.Lock()
+func (j *joiners) Enqueue(key *remoting.Endpoint, resp chan remoting.RapidResponse) {
+	// j.lock.Lock()
 
-	if q, ok := j.toRespondTo[*key]; ok {
-		q <- resp
+	if q, ok := j.data.Load(j.key(key)); ok {
+		ch := q.(chan chan remoting.RapidResponse)
+		ch <- resp
 	}
-	j.lock.Unlock()
+	// j.lock.Unlock()
 }
 
-func (j *joiners) Deque(key *remoting.Endpoint, resp *remoting.RapidResponse) {
-	j.lock.Lock()
-	k := *key
-	if ch, ok := j.toRespondTo[k]; ok {
-		delete(j.toRespondTo, k)
+func (j *joiners) Deque(key *remoting.Endpoint, resp remoting.RapidResponse) {
+	// j.lock.Lock()
+	k := j.key(key)
+
+	if cc, ok := j.data.Load(k); ok {
+		ch := cc.(chan chan remoting.RapidResponse)
+		j.data.Delete(k)
 		close(ch)
 		for f := range ch {
 			f <- resp
 			close(f)
 		}
 	}
-	j.lock.Unlock()
+	// j.lock.Unlock()
 }
 
 func (j *joiners) Has(key *remoting.Endpoint) bool {
-	j.lock.Lock()
-	if len(j.toRespondTo) == 0 {
-		j.lock.Unlock()
-		return false
-	}
 
-	_, ok := j.toRespondTo[*key]
-	j.lock.Unlock()
+	_, ok := j.data.Load(j.key(key))
+	// j.lock.Unlock()
 	return ok
 }
 
@@ -723,23 +717,19 @@ type joiner struct {
 }
 
 type joinerData struct {
-	data hashmap.HashMap
+	data sync.Map
 }
 
-func (j *joinerData) cs(key *remoting.Endpoint) []byte {
-	b, err := proto.Marshal(key)
-	if err != nil {
-		panic(err)
-	}
-	return b
+func (j *joinerData) cs(key *remoting.Endpoint) uint64 {
+	return epchecksum.Checksum(key, 0)
 }
 
 func (j *joinerData) Set(key *remoting.Endpoint, value joiner) {
-	j.data.Set(j.cs(key), value)
+	j.data.Store(j.cs(key), value)
 }
 
 func (j *joinerData) Get(key *remoting.Endpoint) *joiner {
-	v, ok := j.data.Get(j.cs(key))
+	v, ok := j.data.Load(j.cs(key))
 	if !ok {
 		return nil
 	}
@@ -749,17 +739,17 @@ func (j *joinerData) Get(key *remoting.Endpoint) *joiner {
 
 func (j *joinerData) Del(key *remoting.Endpoint) *joiner {
 	csk := j.cs(key)
-	prev, ok := j.data.Get(csk)
+	prev, ok := j.data.Load(csk)
 	if !ok {
 		return nil
 	}
-	j.data.Del(csk)
+	j.data.Delete(csk)
 	v := prev.(joiner)
 	return &v
 }
 
 func (j *joinerData) GetOK(key *remoting.Endpoint) (joiner, bool) {
-	v, ok := j.data.Get(j.cs(key))
+	v, ok := j.data.Load(j.cs(key))
 	if ok {
 		return v.(joiner), ok
 	}
@@ -767,7 +757,11 @@ func (j *joinerData) GetOK(key *remoting.Endpoint) (joiner, bool) {
 }
 
 type endpointSet struct {
-	data map[*remoting.Endpoint]bool
+	data map[uint64]*remoting.Endpoint
+}
+
+func (e *endpointSet) key(ep *remoting.Endpoint) uint64 {
+	return epchecksum.Checksum(ep, 0)
 }
 
 func (e *endpointSet) Len() int {
@@ -784,27 +778,43 @@ func (e *endpointSet) AddAll(eps []*remoting.Endpoint) {
 }
 
 func (e *endpointSet) Add(ep *remoting.Endpoint) bool {
-	if ok := e.data[ep]; ok {
-		return !ok
+	k := e.key(ep)
+	if _, ok := e.data[k]; ok {
+		return false
 	}
-	e.data[ep] = true
+	e.data[k] = ep
 	return true
 }
 
-func (e *endpointSet) checksum(ep *remoting.Endpoint) uint64 {
-	return epchecksum.Checksum(ep, 0)
-}
-
 func (e *endpointSet) Contains(ep *remoting.Endpoint) bool {
-	_, ok := e.data[ep]
+	_, ok := e.data[e.key(ep)]
 	return ok
 }
 
 func (e *endpointSet) Values() []*remoting.Endpoint {
 	val := make([]*remoting.Endpoint, 0, len(e.data))
-	for v := range e.data {
+	for _, v := range e.data {
 		val = append(val, v)
 	}
 	sortEndpoints(val)
 	return val
+}
+
+type atomicBool struct {
+	v uint32
+}
+
+func (a *atomicBool) Set(old, new bool) bool {
+	var ov, nv uint32
+	if old {
+		ov = 1
+	}
+	if new {
+		nv = 1
+	}
+	return atomic.CompareAndSwapUint32(&a.v, ov, nv)
+}
+
+func (a *atomicBool) Value() bool {
+	return atomic.LoadUint32(&a.v) == 1
 }

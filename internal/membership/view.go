@@ -17,7 +17,6 @@ import (
 
 	"github.com/OneOfOne/xxhash"
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/emirpasic/gods/sets/treeset"
 )
 
 func addressComparator(seed int) func(interface{}, interface{}) int {
@@ -39,52 +38,24 @@ func addressComparator(seed int) func(interface{}, interface{}) int {
 	}
 }
 
-func nodeIDComparator(left, right interface{}) int {
-	l := left.(*remoting.NodeId)
-	r := right.(*remoting.NodeId)
-
-	// first comepare high bits
-	if l.GetHigh() < r.GetHigh() {
-		return -1
-	}
-	if l.GetHigh() > r.GetHigh() {
-		return 1
-	}
-
-	// high bits are equal, try the low bits
-	if l.GetLow() < r.GetLow() {
-		return -1
-	}
-	if l.GetLow() > r.GetLow() {
-		return 1
-	}
-	// ids are equal
-	return 0
-}
-
 // NewView creates a new view
 func NewView(k int, nodeIDs []*remoting.NodeId, nodeAddrs []*remoting.Endpoint) *View {
-	// seenIdentifiers := treeset.NewWith(nodeIDComparator)
 	seenIdentifiers := newNodeIDList()
 	for _, nodeID := range nodeIDs {
 		seenIdentifiers.Add(nodeID)
 	}
 
-	//epcsCaches := make([]*endpointChecksumCache, k)
-	rings := make([]*treeset.Set, k)
+	rings := make([]*endpointList, k)
 	for i := 0; i < k; i++ {
-		//cache := makeCache(nil, i)
-		ts := treeset.NewWith(addressComparator(i))
+		ts := newEndpointList(i)
 		for _, n := range nodeAddrs {
 			ts.Add(n)
 		}
-		//epcsCaches[i] = cache
 		rings[i] = ts
 	}
 
 	return &View{
-		k: k,
-		//endpointChecksumCaches:      epcsCaches,
+		k:                           k,
 		rings:                       rings,
 		identifiersSeen:             seenIdentifiers,
 		configID:                    -1,
@@ -95,17 +66,10 @@ func NewView(k int, nodeIDs []*remoting.NodeId, nodeAddrs []*remoting.Endpoint) 
 // View hosts K permutations of the memberlist that represent the monitoring
 // relationship between nodes; every node monitors its successor on each ring.
 type View struct {
-	//lock sync.Mutex
-	k int
-	//endpointChecksumCaches      []*endpointChecksumCache
-	rings []*treeset.Set
-
-	//ringsLock       sync.RWMutex
-	lock            sync.RWMutex
-	identifiersSeen *nodeIDList
-	// identifiersSeen *treeset.Set
-	//idLock                      sync.RWMutex
-	//lock                        sync.Mutex
+	k                           int
+	rings                       []*endpointList
+	lock                        sync.RWMutex
+	identifiersSeen             *nodeIDList
 	configID                    int64
 	shouldUpdateConfigurationID uint32
 }
@@ -124,12 +88,12 @@ func (v *View) IsSafeToJoin(addr *remoting.Endpoint, id *remoting.NodeId) remoti
 	defer v.lock.RUnlock()
 
 	if v.isHostPresent(addr) {
-		return remoting.HOSTNAME_ALREADY_IN_RING
+		return remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING
 	}
 	if v.isIdentifierPresent(id) {
-		return remoting.UUID_ALREADY_IN_RING
+		return remoting.JoinStatusCode_UUID_ALREADY_IN_RING
 	}
-	return remoting.SAFE_TO_JOIN
+	return remoting.JoinStatusCode_SAFE_TO_JOIN
 }
 
 // RingAdd a node to all K rings and records its unique identifier
@@ -185,7 +149,7 @@ func (v *View) Size() int {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	return v.rings[0].Size()
+	return v.rings[0].Len()
 }
 
 // IsIdentifierPresent returns whether an identifier has been used by a node already or not
@@ -235,22 +199,14 @@ func (v *View) ObserversForNode(addr *remoting.Endpoint) ([]*remoting.Endpoint, 
 }
 
 func (v *View) observersForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
-	if v.rings[0].Size() <= 1 {
+	if v.rings[0].Len() <= 1 {
 		return nil
 	}
 
 	var observers []*remoting.Endpoint
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
-		successor, found := higher(lst, addr)
-		if found {
-			observers = append(observers, successor)
-		} else {
-			iter := lst.Iterator()
-			if iter.First() {
-				observers = append(observers, iter.Value().(*remoting.Endpoint))
-			}
-		}
+		observers = append(observers, lst.Higher(addr))
 	}
 	return observers
 }
@@ -294,7 +250,7 @@ func (v *View) SubjectsOf(addr *remoting.Endpoint) ([]*remoting.Endpoint, error)
 		return nil, &NodeNotInRingError{Node: addr}
 	}
 
-	if v.rings[0].Size() <= 1 {
+	if v.rings[0].Len() <= 1 {
 		return nil, nil
 	}
 
@@ -305,16 +261,7 @@ func (v *View) predecessorsOf(addr *remoting.Endpoint) []*remoting.Endpoint {
 	var subjects []*remoting.Endpoint
 	for k := 0; k < v.k; k++ {
 		lst := v.rings[k]
-
-		predecessor, found := lower(lst, addr)
-		if found {
-			subjects = append(subjects, predecessor)
-		} else if !lst.Empty() {
-			iter := lst.Iterator()
-			if iter.Last() {
-				subjects = append(subjects, iter.Value().(*remoting.Endpoint))
-			}
-		}
+		subjects = append(subjects, lst.Lower(addr))
 	}
 	return subjects
 }
@@ -327,43 +274,9 @@ func (v *View) edgeStatusFor(addr *remoting.Endpoint) remoting.EdgeStatus {
 	defer v.lock.RUnlock()
 
 	if v.isHostPresent(addr) {
-		return remoting.DOWN
+		return remoting.EdgeStatus_DOWN
 	}
-	return remoting.UP
-}
-
-func higher(lst *treeset.Set, addr *remoting.Endpoint) (successor *remoting.Endpoint, found bool) {
-	iter := lst.Iterator()
-	for iter.Next() {
-		val := iter.Value().(*remoting.Endpoint)
-		if val.Hostname == addr.Hostname && val.Port == addr.Port {
-			if iter.Next() {
-				return iter.Value().(*remoting.Endpoint), true
-			}
-			break
-		}
-	}
-	if iter.First() {
-		return iter.Value().(*remoting.Endpoint), true
-	}
-	return nil, false
-}
-
-func lower(lst *treeset.Set, addr *remoting.Endpoint) (predecessor *remoting.Endpoint, found bool) {
-	iter := lst.Iterator()
-	for iter.Next() {
-		val := iter.Value().(*remoting.Endpoint)
-		if val.Hostname == addr.Hostname && val.Port == addr.Port {
-			if iter.Prev() { // peek for next
-				return iter.Value().(*remoting.Endpoint), true
-			}
-			break
-		}
-	}
-	if iter.Last() {
-		return iter.Value().(*remoting.Endpoint), true
-	}
-	return nil, false
+	return remoting.EdgeStatus_UP
 }
 
 // GetRing gets the list of hosts in the k'th ring.
@@ -374,9 +287,10 @@ func (v *View) GetRing(k int) []*remoting.Endpoint {
 }
 
 func (v *View) getRing(k int) []*remoting.Endpoint {
-	addrs := make([]*remoting.Endpoint, v.rings[k].Size())
-	v.rings[k].Each(func(i int, v interface{}) {
-		addrs[i] = v.(*remoting.Endpoint)
+	addrs := make([]*remoting.Endpoint, v.rings[k].Len())
+	v.rings[k].Each(func(i int, v *remoting.Endpoint) bool {
+		addrs[i] = v
+		return true
 	})
 	return addrs
 }
@@ -413,19 +327,24 @@ func (v *View) ringNumbers(monitor, monitoree *remoting.Endpoint) []int32 {
 // ConfigurationID for the current set of identifiers and nodes
 func (v *View) ConfigurationID() int64 {
 	if atomic.CompareAndSwapUint32(&v.shouldUpdateConfigurationID, 1, 0) {
+		v.lock.RLock()
 		atomic.StoreInt64(&v.configID, configurationIDFromTreeset(v.identifiersSeen, v.rings[0]))
+		v.lock.RUnlock()
 	}
-	return v.configID
+	return atomic.LoadInt64(&v.configID)
 }
 
 // configuration object that contains the list of nodes in the membership view
 // as well as the identifiers seen so far. These two lists suffice to bootstrap an
 // identical copy of the MembershipView object.
 func (v *View) configuration() *configuration {
-	return newConfiguration(v.identifiersSeen, v.rings[0])
+	v.lock.RLock()
+	c := newConfiguration(v.identifiersSeen, v.rings[0])
+	v.lock.RUnlock()
+	return c
 }
 
-func configurationIDFromTreeset(identifiers *nodeIDList, nodes *treeset.Set) int64 {
+func configurationIDFromTreeset(identifiers *nodeIDList, nodes *endpointList) int64 {
 	var hash uint64 = 1
 
 	identifiers.Each(func(i int, id *remoting.NodeId) bool {
@@ -439,19 +358,19 @@ func configurationIDFromTreeset(identifiers *nodeIDList, nodes *treeset.Set) int
 		return true
 	})
 
-	nodes.Each(func(i int, v interface{}) {
-		addr := v.(*remoting.Endpoint)
+	nodes.Each(func(i int, addr *remoting.Endpoint) bool {
 		prt := make([]byte, 4)
 		binary.LittleEndian.PutUint32(prt, uint32(addr.Port))
 
 		hash = hash*37 + xxhash.ChecksumString64(addr.Hostname)
 		hash = hash*37 + xxhash.Checksum64(prt)
+		return true
 	})
 	return int64(hash)
 }
 
 // newConfiguration initializes a new configuration object from identifiers and nodes
-func newConfiguration(identifiers *nodeIDList, nodes *treeset.Set) *configuration {
+func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *configuration {
 	idfs := make([]*remoting.NodeId, identifiers.Len())
 	var hash uint64 = 1
 	identifiers.Each(func(i int, id *remoting.NodeId) bool {
@@ -464,13 +383,14 @@ func newConfiguration(identifiers *nodeIDList, nodes *treeset.Set) *configuratio
 		hash = hash*37 + xxhash.Checksum64(lb)
 		return true
 	})
-	nds := make([]*remoting.Endpoint, nodes.Size())
-	nodes.Each(func(i int, v interface{}) {
-		nds[i] = v.(*remoting.Endpoint)
+	nds := make([]*remoting.Endpoint, nodes.Len())
+	nodes.Each(func(i int, addr *remoting.Endpoint) bool {
+		nds[i] = addr
 		hash = hash*37 + xxhash.ChecksumString64(nds[i].Hostname)
 		prt := make([]byte, 4)
 		binary.LittleEndian.PutUint32(prt, uint32(nds[i].Port))
 		hash = hash*37 + xxhash.Checksum64(prt)
+		return true
 	})
 
 	return &configuration{
@@ -574,6 +494,13 @@ func (e endpointEntry) Compare(cmp common.Comparator) int {
 	return 0
 }
 
+func newEndpointList(seed int) *endpointList {
+	return &endpointList{
+		d:    skip.New(uint64(0)),
+		seed: seed,
+	}
+}
+
 type endpointList struct {
 	d    *skip.SkipList
 	seed int
@@ -614,12 +541,23 @@ func (e *endpointList) Contains(node *remoting.Endpoint) bool {
 }
 
 func (e *endpointList) Higher(node *remoting.Endpoint) *remoting.Endpoint {
-	// e.d.Iter()
-	return nil
+	v, pos := e.d.GetWithPosition(e.entry(node))
+	if v == nil {
+		return e.d.ByPosition(pos).(endpointEntry).endpoint
+	}
+	if e.d.Len() == pos+1 {
+		return e.d.ByPosition(0).(endpointEntry).endpoint
+	}
+	return e.d.ByPosition(pos + 1).(endpointEntry).endpoint
 }
 
 func (e *endpointList) Lower(node *remoting.Endpoint) *remoting.Endpoint {
-	return nil
+	last := e.d.Len() - 1
+	_, pos := e.d.GetWithPosition(e.entry(node))
+	if pos < 1 {
+		return e.d.ByPosition(last).(endpointEntry).endpoint
+	}
+	return e.d.ByPosition(pos - 1).(endpointEntry).endpoint
 }
 
 func newNodeIDList() *nodeIDList {

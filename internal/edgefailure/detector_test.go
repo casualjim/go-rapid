@@ -211,7 +211,7 @@ func TestPingPong_Bootstrapping(t *testing.T) {
 	cl.
 		On("DoBestEffort", ctx, addr, mock.AnythingOfType("*remoting.RapidRequest")).
 		Return(remoting.WrapResponse(&remoting.ProbeResponse{
-			Status: remoting.BOOTSTRAPPING,
+			Status: remoting.NodeStatus_BOOTSTRAPPING,
 		}), nil)
 
 	var failed *remoting.Endpoint
@@ -234,7 +234,7 @@ func TestPingPong_Bootstrapping_Failure(t *testing.T) {
 	cl.
 		On("DoBestEffort", ctx, addr, mock.AnythingOfType("*remoting.RapidRequest")).
 		Return(remoting.WrapResponse(&remoting.ProbeResponse{
-			Status: remoting.BOOTSTRAPPING,
+			Status: remoting.NodeStatus_BOOTSTRAPPING,
 		}), nil)
 
 	var failed *remoting.Endpoint

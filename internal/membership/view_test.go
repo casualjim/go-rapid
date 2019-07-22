@@ -42,7 +42,7 @@ func TestView_AddOneRing(t *testing.T) {
 	addr := endpoint("127.0.0.1", 123)
 
 	require.NoError(t, vw.RingAdd(addr, newNodeID()))
-	require.Equal(t, 1, vw.rings[0].Size())
+	require.Equal(t, 1, vw.rings[0].Len())
 
 	for i := 0; i < k; i++ {
 		list := vw.GetRing(i)

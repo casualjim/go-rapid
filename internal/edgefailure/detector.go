@@ -85,9 +85,8 @@ func (p *Scheduler) Schedule(endpoint *remoting.Endpoint) {
 }
 
 func (p *Scheduler) CancelAll() {
-	p.cancelAll()
-
 	p.lock.Lock()
+	p.cancelAll()
 	p.detectors = make(map[*remoting.Endpoint]context.CancelFunc)
 	p.rootContext, p.cancelAll = context.WithCancel(context.Background())
 	p.lock.Unlock()
@@ -95,9 +94,9 @@ func (p *Scheduler) CancelAll() {
 
 func PingPong(log *zap.Logger, client api.Client) api.Detector {
 	return api.DetectorFunc(func(endpoint *remoting.Endpoint, callback api.EdgeFailureCallback) api.DetectorJob {
-		log = log.With(zap.String("addr", fmt.Sprintf("%s:%d", endpoint.Hostname, endpoint.Port)))
+		lg := log.With(zap.String("addr", fmt.Sprintf("%s:%d", endpoint.Hostname, endpoint.Port)))
 		return &pingPongDetector{
-			log:       log,
+			log:       lg,
 			addr:      endpoint,
 			client:    client,
 			onFailure: callback,
@@ -145,7 +144,7 @@ func (p *pingPongDetector) Detect(ctx context.Context) {
 		return
 	}
 
-	if resp.GetProbeResponse().GetStatus() == remoting.BOOTSTRAPPING {
+	if resp.GetProbeResponse().GetStatus() == remoting.NodeStatus_BOOTSTRAPPING {
 		p.bootstrapResponseCount++
 		if p.bootstrapResponseCount > bootstrapCountThreshold {
 			p.handleFailure(p.addr, errors.New("bootstrap count threshold exceeded"))

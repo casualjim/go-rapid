@@ -28,7 +28,7 @@ type StatusChange struct {
 }
 
 func (n StatusChange) String() string {
-	return fmt.Sprintf("%s:%s:%s", n.Addr, n.Status, n.Metadata.GoString())
+	return fmt.Sprintf("%s:%s:%s", n.Addr, n.Status, n.Metadata.String())
 }
 
 // SubscriberFunc allows for using a function as Subscriber interface implementation

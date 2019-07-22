@@ -37,7 +37,7 @@ func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 		ret, e = b.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -50,7 +50,7 @@ func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 	ret, e = b.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -72,7 +72,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -86,7 +86,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -99,7 +99,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -110,7 +110,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -134,7 +134,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -148,7 +148,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -162,7 +162,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -175,7 +175,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -186,7 +186,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -197,7 +197,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -221,7 +221,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -235,7 +235,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -249,7 +249,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -264,14 +264,14 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	_, _ = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h+1),
 		dst1,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -282,14 +282,14 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	_, _ = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h+1),
 		dst3,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -300,7 +300,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -324,7 +324,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -339,7 +339,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -353,7 +353,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 		ret, e = wb.AggregateForProposal(createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
-			remoting.UP,
+			remoting.EdgeStatus_UP,
 			int32(i),
 		))
 
@@ -366,7 +366,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -377,7 +377,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	ret, e = wb.AggregateForProposal(createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
-		remoting.UP,
+		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
@@ -404,7 +404,7 @@ func TestMultiNodeCutDetector_Batch(t *testing.T) {
 			agg, _ := wb.AggregateForProposal(createAlertMessage(
 				endpoint("127.0.0.1", 1),
 				host,
-				remoting.UP,
+				remoting.EdgeStatus_UP,
 				int32(rn),
 			))
 			proposal = append(proposal, agg...)
@@ -437,7 +437,7 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 		ret, _ = wb.AggregateForProposal(createAlertMessage(
 			monitors[i],
 			dst,
-			remoting.DOWN,
+			remoting.EdgeStatus_DOWN,
 			int32(i),
 		))
 		require.Empty(t, ret)
@@ -455,7 +455,7 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 			ret, _ = wb.AggregateForProposal(createAlertMessage(
 				monitorsOfMonitor[j],
 				monitors[i],
-				remoting.DOWN,
+				remoting.EdgeStatus_DOWN,
 				int32(j),
 			))
 			require.Empty(t, ret)

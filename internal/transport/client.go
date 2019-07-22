@@ -6,13 +6,11 @@ import (
 	"net"
 	"reflect"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/casualjim/go-rapid/api"
+	"github.com/hlts2/gocache"
 	"go.uber.org/zap"
-
-	"github.com/dualinventive/go-lruttl"
 
 	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
@@ -58,42 +56,29 @@ func (s *Settings) Timeout(req *remoting.RapidRequest) time.Duration {
 }
 
 func NewGRPCClient(cfg *Settings, grpcOpts ...grpc.DialOption) *Client {
-	onEvict := func(endpoint *remoting.Endpoint, conn *grpc.ClientConn) {
-		da := net.JoinHostPort(endpoint.Hostname, strconv.Itoa(int(endpoint.Port)))
-		if err := conn.Close(); err != nil {
-			cfg.Log.Debug("evicting grpc client connection", zap.Error(err), zap.String("addr", da))
-		}
-	}
-
 	return &Client{
-		clients: newCache(onEvict, 30*time.Second, grpcOpts...),
+		clients: newCache(30*time.Second, grpcOpts...),
 		config:  cfg,
 	}
 }
 
 type clientLoader func(*remoting.Endpoint, ...grpc.DialOption) (*grpc.ClientConn, error)
 
-func newCache(onEvict func(*remoting.Endpoint, *grpc.ClientConn), ttl time.Duration, grpcOpts ...grpc.DialOption) *clientCache {
-	cache := lruttl.New(0, ttl)
-	cache.OnEvicted = func(key lruttl.Key, value interface{}) {
-		onEvict(key.(*remoting.Endpoint), value.(*grpc.ClientConn))
-	}
+func newCache(ttl time.Duration, grpcOpts ...grpc.DialOption) *clientCache {
 	return &clientCache{
-		data:     cache,
 		grpcOpts: grpcOpts,
+		cache:    gocache.New(gocache.WithExpireAt(ttl)),
 	}
 }
 
 type clientCache struct {
-	sync.RWMutex
-	data     *lruttl.Cache
+	cache    gocache.Gocache
 	grpcOpts []grpc.DialOption
 }
 
 func (c *clientCache) GetOrLoad(key *remoting.Endpoint, loader clientLoader) (*grpc.ClientConn, error) {
-	c.Lock()
-	defer c.Unlock()
-	conn, found := c.data.Get(key)
+	skey := fmt.Sprintf("%s:%d", key.Hostname, key.Port)
+	conn, found := c.cache.Get(skey)
 	if found {
 		return conn.(*grpc.ClientConn), nil
 	}
@@ -102,15 +87,12 @@ func (c *clientCache) GetOrLoad(key *remoting.Endpoint, loader clientLoader) (*g
 	if err != nil {
 		return nil, err
 	}
-
-	c.data.Add(key, newConn)
+	c.cache.Set(skey, newConn)
 	return newConn, nil
 }
 
 func (c *clientCache) Clear() {
-	c.Lock()
-	defer c.Unlock()
-	c.data.Clear()
+	c.cache.Clear()
 }
 
 type Client struct {
@@ -193,11 +175,24 @@ func (d *Client) Close() error {
 	return nil
 }
 
+// func createContextDialer(network, localAddr string) (func(context.Context, string, string) (net.Conn, error), error) {
+// 	nla, err := reuseport.ResolveAddr(network, localAddr)
+// 	if err != nil {
+// 		return nil, errors.Wrap(err, "resolving local addr")
+// 	}
+// 	d := net.Dialer{
+// 		Control:   reuseport.Control,
+// 		LocalAddr: nla,
+// 	}
+// 	return d.DialContext, nil
+// }
+
 func createConnection(log *zap.Logger, insecure bool) clientLoader {
 	return func(endpoint *remoting.Endpoint, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 		if insecure {
 			opts = append(opts, grpc.WithInsecure())
 		}
+
 		return grpc.DialContext(
 			context.TODO(),
 			net.JoinHostPort(endpoint.Hostname, strconv.Itoa(int(endpoint.Port))),

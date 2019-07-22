@@ -88,7 +88,7 @@ func (b *MultiNodeCutDetector) AggregateForProposal(msg *remoting.AlertMessage) 
 }
 
 func (b *MultiNodeCutDetector) aggregateForProposal(msg *remoting.AlertMessage, ringNumber int32) []*remoting.Endpoint {
-	if msg.EdgeStatus == remoting.DOWN {
+	if msg.EdgeStatus == remoting.EdgeStatus_DOWN {
 		b.log.Debug("seen link down event")
 		b.seenLinkDown = true
 	}

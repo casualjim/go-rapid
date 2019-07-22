@@ -16,6 +16,7 @@ import (
 	"github.com/casualjim/go-rapid/internal/freeport"
 	"github.com/casualjim/go-rapid/internal/transport"
 	"github.com/casualjim/go-rapid/remoting"
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -80,7 +81,7 @@ func (m *messagingSuite) TestJoinFirstNode() {
 	resp, err := m.sendPreJoinMessage(client, m.addr, clientAddr, api.NewNodeId())
 	m.Require().NoError(err)
 	m.Require().NotNil(resp)
-	m.Require().Equal(remoting.SAFE_TO_JOIN, resp.GetStatusCode())
+	m.Require().Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, resp.GetStatusCode())
 	m.Require().Equal(m.k, len(resp.GetEndpoints()))
 }
 
@@ -106,7 +107,7 @@ func (m *messagingSuite) TestJoinFirstNodeRetryWithErrors() {
 	resp, err := m.sendPreJoinMessage(client1, serverAddr, clientAddr1, api.NewNodeId())
 	require.NoError(err)
 	require.NotNil(resp)
-	require.Equal(remoting.HOSTNAME_ALREADY_IN_RING, resp.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING, resp.GetStatusCode())
 	require.Equal(m.k, len(resp.GetEndpoints()))
 	require.Empty(resp.GetIdentifiers())
 
@@ -118,7 +119,7 @@ func (m *messagingSuite) TestJoinFirstNodeRetryWithErrors() {
 	resp2, err := m.sendPreJoinMessage(client2, serverAddr, clientAddr2, nodeID)
 	require.NoError(err)
 	require.NotNil(resp2)
-	require.Equal(remoting.UUID_ALREADY_IN_RING, resp2.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_UUID_ALREADY_IN_RING, resp2.GetStatusCode())
 	require.Empty(resp2.GetEndpoints())
 	require.Empty(resp2.GetIdentifiers())
 }
@@ -152,13 +153,12 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckConfiguration() {
 	resp, err := m.sendPreJoinMessage(joinerClient, serverAddr, joinerAddr, api.NewNodeId())
 	require.NoError(err)
 	require.NotNil(resp)
-	require.Equal(remoting.SAFE_TO_JOIN, resp.GetStatusCode(), "expected %s but get %s", remoting.SAFE_TO_JOIN, resp.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, resp.GetStatusCode(), "expected %s but get %s", remoting.JoinStatusCode_SAFE_TO_JOIN, resp.GetStatusCode())
 	require.Len(resp.GetEndpoints(), m.k)
 
 	hostsAtClient := resp.GetEndpoints()
 	observers := view.ExpectedObserversOf(joinerAddr)
-
-	require.ElementsMatch(observers, hostsAtClient)
+	verifyProposal(m.T(), observers, hostsAtClient)
 }
 
 func mkNodeId(j int) *remoting.NodeId {
@@ -194,7 +194,7 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	require := m.Require()
 	require.NoError(err)
 	require.NotNil(p1Res)
-	require.Equal(remoting.SAFE_TO_JOIN, p1Res.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, p1Res.GetStatusCode())
 	require.Len(p1Res.GetEndpoints(), m.k)
 
 	// Batch together requests to the same node.
@@ -221,7 +221,7 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	joinResponses := group1.Wait()
 	require.Len(joinResponses, len(ringNumbersPerObserver))
 	for _, jr := range joinResponses {
-		require.Equal(remoting.SAFE_TO_JOIN, jr.GetStatusCode())
+		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
 	}
 
 	// Try #2. Should get back the full configuration from all nodes.
@@ -241,7 +241,7 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	retriedResponses := group2.Wait()
 	require.Len(retriedResponses, len(ringNumbersPerObserver))
 	for _, jr := range retriedResponses {
-		require.Equal(remoting.SAFE_TO_JOIN, jr.GetStatusCode(), "expected %s but got %s", remoting.SAFE_TO_JOIN, jr.GetStatusCode())
+		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode(), "expected %s but got %s", remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
 		require.Len(jr.GetEndpoints(), numNodes+1)
 	}
 }
@@ -261,14 +261,14 @@ func (m *messagingSuite) TestJoinWithSingleNodeBootstrap() {
 	require.NoError(err)
 	require.NotNil(resp)
 	require.Len(resp.GetEndpoints(), m.k)
-	require.Equal(remoting.SAFE_TO_JOIN, resp.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, resp.GetStatusCode())
 	require.Equal(view.ConfigurationID(), resp.GetConfigurationId())
 
 	// Verify that the hostnames retrieved at the joining peer
 	// matches that of the seed node.
 	observers := resp.GetEndpoints()
 	seeds := view.ExpectedObserversOf(joinerAddr)
-	require.Equal(seeds, observers)
+	verifyProposal(m.T(), seeds, observers)
 }
 
 func (m *messagingSuite) TestBootstrapAndThenProbe() {
@@ -289,19 +289,28 @@ func (m *messagingSuite) TestBootstrapAndThenProbe() {
 	require.NoError(err)
 	require.NotNil(resp)
 	require.Len(resp.GetEndpoints(), m.k)
-	require.Equal(remoting.SAFE_TO_JOIN, resp.GetStatusCode())
+	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, resp.GetStatusCode())
 	require.Equal(view.ConfigurationID(), resp.GetConfigurationId())
 
 	// Verify that the hostnames retrieved at the joining peer
 	// matches that of the seed node.
 	observers := resp.GetEndpoints()
 	seeds := view.ExpectedObserversOf(clientAddr)
-	require.Equal(seeds, observers)
+	verifyProposal(m.T(), seeds, observers)
 
 	probeResp, err := client.Do(m.ctx, m.addr, probeRequest())
 	require.NoError(err)
 	require.NotNil(probeResp)
-	require.Equal(remoting.OK, probeResp.GetProbeResponse().GetStatus())
+	require.Equal(remoting.NodeStatus_OK, probeResp.GetProbeResponse().GetStatus())
+}
+
+func verifyProposal(t testing.TB, left, right []*remoting.Endpoint) {
+	require.Equal(t, len(left), len(right))
+	for i, l := range left {
+		r := right[i]
+		require.Equal(t, l.GetHostname(), r.GetHostname())
+		require.Equal(t, l.GetPort(), r.GetPort())
+	}
 }
 
 /**
@@ -332,11 +341,11 @@ func (m *messagingSuite) TestProbeBeforeBootstrap() {
 
 	probeResp1, err := joinerClient.Do(m.ctx, serverAddr1, probeRequest())
 	require.NoError(err)
-	require.Equal(remoting.OK, probeResp1.GetProbeResponse().GetStatus())
+	require.Equal(remoting.NodeStatus_OK, probeResp1.GetProbeResponse().GetStatus())
 
 	probeResp2, err := joinerClient.Do(m.ctx, serverAddr2, probeRequest())
 	require.NoError(err)
-	require.Equal(remoting.BOOTSTRAPPING, probeResp2.GetProbeResponse().GetStatus())
+	require.Equal(remoting.NodeStatus_BOOTSTRAPPING, probeResp2.GetProbeResponse().GetStatus())
 }
 
 func probeRequest() *remoting.RapidRequest {

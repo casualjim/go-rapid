@@ -308,12 +308,12 @@ func (c *Cluster) join(endpoint *remoting.Endpoint) error {
 		case *phase1Result:
 			sender := etp.Resp.Sender
 			switch sc := etp.Resp.StatusCode; sc {
-			case remoting.CONFIG_CHANGED:
+			case remoting.JoinStatusCode_CONFIG_CHANGED:
 				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
-			case remoting.UUID_ALREADY_IN_RING:
+			case remoting.JoinStatusCode_UUID_ALREADY_IN_RING:
 				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
 				currentID = api.NewNodeId()
-			case remoting.MEMBERSHIP_REJECTED:
+			case remoting.JoinStatusCode_MEMBERSHIP_REJECTED:
 				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
 			default:
 				return errors.Errorf("cluster join: unrecognized status code: %s", etp.Resp.StatusCode.String())
@@ -348,7 +348,7 @@ func (c *Cluster) joinAttempt(endpoint *remoting.Endpoint, currentID *remoting.N
 	 * part of the configuration (which happens due to a race condition where we retry a join
 	 * after a timeout while the cluster has added us -- see below).
 	 */
-	if jr.GetStatusCode() != remoting.SAFE_TO_JOIN && jr.GetStatusCode() != remoting.HOSTNAME_ALREADY_IN_RING {
+	if jr.GetStatusCode() != remoting.JoinStatusCode_SAFE_TO_JOIN && jr.GetStatusCode() != remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		return &phase1Result{Resp: jr}
 	}
 
@@ -359,7 +359,7 @@ func (c *Cluster) joinAttempt(endpoint *remoting.Endpoint, currentID *remoting.N
 	 * To do that, that client tries the join protocol but with a configuration id of -1.
 	 */
 	configToJoin := jr.GetConfigurationId()
-	if jr.GetStatusCode() == remoting.HOSTNAME_ALREADY_IN_RING {
+	if jr.GetStatusCode() == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		configToJoin = -1
 	}
 	c.log.Debug(
@@ -429,7 +429,7 @@ func (c *Cluster) sendJoinPhase2Message(p1Result *remoting.JoinResponse, configT
 		if rr == nil {
 			continue
 		}
-		if rr.GetStatusCode() != remoting.SAFE_TO_JOIN {
+		if rr.GetStatusCode() != remoting.JoinStatusCode_SAFE_TO_JOIN {
 			continue
 		}
 		if rr.GetConfigurationId() == configToJoin {

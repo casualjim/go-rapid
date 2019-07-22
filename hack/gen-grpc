@@ -38,5 +38,5 @@ protoc \
   -I=remoting \
   -I="$(go env GOPATH)/src/github.com/gogo/protobuf" \
   -I="$(go env GOPATH)/src/github.com/gogo/protobuf/protobuf" \
-  --gogoslick_out=plugins=grpc:remoting \
+  --go_out=plugins=grpc:remoting \
   remoting/rapid.proto

@@ -99,10 +99,12 @@ func (d *DirectBroadcaster) Broadcast(ctx context.Context, req *remoting.RapidRe
 
 	d.paxosInstances.EachKey(func(k *remoting.Endpoint) {
 		d.log.Info(fmt.Sprint("broadcasting to", endpointStr(k), "message:", proto.CompactTextString(req)))
-		_, err := d.client.Do(ctx, k, req)
-		if err != nil {
-			return
-		}
+		go func() {
+			_, err := d.client.Do(ctx, k, req)
+			if err != nil {
+				return
+			}
+		}()
 	})
 }
 

@@ -11,17 +11,29 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/cornelk/hashmap"
-
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
 
+	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/casualjim/go-rapid/remoting"
 )
 
 const (
 	baseDelay = time.Second
 )
+
+func DeferBy(startIn time.Duration, task func()) func() {
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-time.After(startIn):
+			task()
+		case <-ctx.Done():
+
+		}
+	}()
+	return cancel
+}
 
 // New classic consensus protocol
 func New(opts ...Option) (*Fast, error) {
@@ -42,32 +54,28 @@ func New(opts ...Option) (*Fast, error) {
 	// especially for very large clusters.
 	jitterRate := 1 / float64(c.membershipSize)
 	cons := &Fast{
-		config:      c,
-		jitterRate:  jitterRate,
-		classicTask: make(chan struct{}),
+		config:     c,
+		jitterRate: jitterRate,
+		votesReceived: &syncEndpointSet{
+			data: make(map[uint64]*remoting.Endpoint),
+		},
+		cancelClassic: func() {},
 	}
+
 	c.onDecide = func(endpoints []*remoting.Endpoint) error {
-		defer func() {
-			if v := recover(); v != nil {
-				var opt zap.Field
-				if vv, ok := v.(error); ok {
-					opt = zap.Error(vv)
-				} else {
-					opt = zap.Reflect("error", v)
-				}
-				c.log.Debug("recovering from panic", opt)
-			}
-		}()
 		atomic.CompareAndSwapInt32(&cons.decided, 0, 1)
+		cons.cancelLock.Lock()
+		cons.cancelClassic()
+		cons.cancelLock.Unlock()
 		return cons.onDecide(endpoints)
 	}
+
 	cons.classic = &Classic{
-		config: c,
-		rnd:    &remoting.Rank{},
-		vrnd:   &remoting.Rank{},
-		crnd:   &remoting.Rank{},
-		//acceptResponses: make(map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage),
-		//acceptReponses2: sled.New(),
+		config:          c,
+		rnd:             &remoting.Rank{},
+		vrnd:            &remoting.Rank{},
+		crnd:            &remoting.Rank{},
+		acceptResponses: &responsesByRank{data: make(map[uint64]map[uint64]*remoting.Phase2BMessage)},
 	}
 	return cons, nil
 }
@@ -84,22 +92,11 @@ type Fast struct {
 
 	jitterRate       float64
 	votesPerProposal counterMap
-	votesReceived    hashmap.HashMap
-	classicTask      chan struct{}
-	taskLock         sync.Mutex
-
-	classic *Classic
-
-	//lock    sync.Mutex
-	decided int32
-}
-
-func epKey(ep proto.Message) []byte {
-	b, err := proto.Marshal(ep)
-	if err != nil {
-		panic(err)
-	}
-	return b
+	votesReceived    *syncEndpointSet
+	cancelLock       sync.Mutex
+	cancelClassic    func()
+	classic          *Classic
+	decided          int32
 }
 
 // Propose a value for a fast round with a delay to trigger the recovery protocol.
@@ -118,38 +115,16 @@ func (f *Fast) Propose(ctx context.Context, vote []*remoting.Endpoint, recoveryD
 		recoveryDelay = f.randomDelay()
 	}
 
-	f.log.Debug("scheduling classic round", zap.Duration("delay", recoveryDelay))
+	f.log.Debug("scheduling classic round fallback", zap.Duration("delay", recoveryDelay))
 
-	f.taskLock.Lock()
-	if f.classicTask != nil {
-		f.log.Debug("Propose resetting classic task")
-		close(f.classicTask)
-		f.classicTask = nil
-	}
-	f.classicTask = make(chan struct{})
-	f.taskLock.Unlock()
-
-	go func(tsk chan struct{}) {
-		select {
-		case _, ok := <-tsk:
-			f.log.Debug("classic task was closed, clearing it")
-			f.taskLock.Lock()
-			if ok {
-				close(f.classicTask)
-			}
-			f.classicTask = nil
-			f.taskLock.Unlock()
-			return
-		case <-time.After(recoveryDelay):
-			f.log.Debug("recovery delay lapsed, closing classic task")
-
-			f.startClassicPaxosRound()
-			return
-		}
-	}(f.classicTask)
+	f.cancelLock.Lock()
+	f.cancelClassic()
+	f.cancelClassic = DeferBy(recoveryDelay, f.startClassicPaxosRound)
+	f.cancelLock.Unlock()
 }
 
 func (f *Fast) startClassicPaxosRound() {
+	f.log.Debug("recovery delay lapsed, starting classic paxos round")
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
@@ -169,12 +144,14 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 		return
 	}
 
-	key := epKey(msg.GetSender())
-	if _, ok := f.votesReceived.GetOrInsert(key, true); ok {
+	// key := epKey(msg.GetSender())
+	if added := f.votesReceived.Add(msg.GetSender()); !added {
 		return
 	}
 
 	count := f.votesPerProposal.IncrementAndGet(msg.GetEndpoints())
+	//  n – (n-1)/3
+	// fr2 := math.Floor(float64(f.membershipSize)-1)/(f-membershipSize/2)
 	fr := int(math.Floor(float64(f.membershipSize-1) / 4.0)) // Fast Paxos resiliency.
 
 	if f.votesReceived.Len() < (f.membershipSize - fr) {
@@ -230,8 +207,11 @@ func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remotin
 	default:
 		return nil, errors.Errorf("unexpected message: %T", req.GetContent())
 	}
-	return &remoting.RapidResponse{}, nil
+
+	return defaultResponse, nil
 }
+
+var defaultResponse = &remoting.RapidResponse{}
 
 func (c *Fast) randomDelay() time.Duration {
 	jitter := time.Duration(-float64(time.Second) * math.Log(1-rand.Float64()) / c.jitterRate)
@@ -247,7 +227,7 @@ func (c *counter) IncrementAndGet() int {
 }
 
 type counterMap struct {
-	data hashmap.HashMap
+	data sync.Map
 }
 
 func (c *counterMap) IncrementAndGet(endpoints []*remoting.Endpoint) int {
@@ -255,23 +235,44 @@ func (c *counterMap) IncrementAndGet(endpoints []*remoting.Endpoint) int {
 		return 0
 	}
 
-	//var cntr *counter
-	//var found bool
-
-	//c.lock.Lock()
-
 	key := makeVvalID(endpoints)
-	entry, _ := c.data.GetOrInsert(key, &counter{val: 0})
+	entry, _ := c.data.LoadOrStore(key, &counter{val: 0})
 	cntr := entry.(*counter)
-	//if c.data == nil {
-	//	c.data = make(map[uint64]*counter)
-	//}
-	//cntr, found = c.data[key]
-	//if !found {
-	//	cntr = &counter{val: 0}
-	//	c.data[key] = cntr
-	//}
-	//c.lock.Unlock()
-
 	return cntr.IncrementAndGet()
+}
+
+type syncEndpointSet struct {
+	lock sync.RWMutex
+	data map[uint64]*remoting.Endpoint
+}
+
+func (e *syncEndpointSet) Len() int {
+	e.lock.RLock()
+	c := len(e.data)
+	e.lock.RUnlock()
+	return c
+}
+
+func (e *syncEndpointSet) key(ep *remoting.Endpoint) uint64 {
+	return epchecksum.Checksum(ep, 0)
+}
+
+func (e *syncEndpointSet) Add(ep *remoting.Endpoint) bool {
+	e.lock.Lock()
+
+	k := e.key(ep)
+	if _, ok := e.data[k]; ok {
+		e.lock.Unlock()
+		return false
+	}
+	e.data[k] = ep
+	e.lock.Unlock()
+	return true
+}
+
+func (e *syncEndpointSet) Contains(ep *remoting.Endpoint) bool {
+	e.lock.RLock()
+	_, ok := e.data[e.key(ep)]
+	e.lock.RUnlock()
+	return ok
 }

@@ -3,9 +3,14 @@ package paxos
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"math/rand"
+	"os"
+	"os/signal"
 	"reflect"
+	"runtime"
+	"syscall"
 	"testing"
 	"time"
 
@@ -19,6 +24,20 @@ import (
 
 	"github.com/stretchr/testify/suite"
 )
+
+func TestMain(m *testing.M) {
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGQUIT)
+		buf := make([]byte, 1<<20)
+		for {
+			<-sigs
+			stacklen := runtime.Stack(buf, true)
+			log.Printf("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf[:stacklen])
+		}
+	}()
+	os.Exit(m.Run())
+}
 
 type typeRegistry struct {
 	mtypes hashmap.HashMap
@@ -50,8 +69,8 @@ func (p *paxosSuite) SetupTest() {
 }
 
 func (p *paxosSuite) createNFastPaxosInstances(numNodes int, onDecide api.EndpointsFunc) *ConsensusRegistry {
-	//lg, err := zap.NewDevelopment()
-	//p.Require().NoError(err)
+	// lg, err := zap.NewDevelopment()
+	// p.Require().NoError(err)
 	lg := zap.NewNop()
 
 	creg := &ConsensusRegistry{data: hashmap.New(uintptr(numNodes))}
@@ -321,12 +340,13 @@ func (p *paxosSuite) coordinatorRuleTests() []coordinatorRuleData {
 }
 
 func (p *paxosSuite) TestRecoveryForSinglePropose() {
+
 	// Test multiple nodes issuing different proposals in parallel
 	for _, num := range p.numNodes() {
 		p.Run(fmt.Sprintf("recovery for %d nodes", num), func() {
 
 			decisions := make(chan []*remoting.Endpoint, num)
-			defer close(decisions)
+			// defer close(decisions)
 
 			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
 				decisions <- nodes
@@ -337,7 +357,7 @@ func (p *paxosSuite) TestRecoveryForSinglePropose() {
 
 			proposal := []*remoting.Endpoint{{Hostname: "127.14.12.3", Port: 1234}}
 			// instances is backed by a map, so first is really just any at random
-			go instances.First().Propose(context.Background(), proposal, 50*time.Millisecond)
+			go func() { instances.First().Propose(context.Background(), proposal, 50*time.Millisecond) }()
 
 			p.waitAndVerifyAgreement(num, 20, decisions)
 		})
@@ -350,6 +370,8 @@ func (p *paxosSuite) TestRecoveryFromFastRoundDifferentProposals() {
 		p.Run(fmt.Sprintf("recovery for %d nodes different proposals", num), func() {
 
 			decisions := make(chan []*remoting.Endpoint, num)
+			// defer close(decisions)
+
 			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
@@ -376,6 +398,8 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 	for _, num := range p.numNodes() {
 		p.Run(fmt.Sprintf("classic round for %d nodes after successful fast round", num), func() {
 			decisions := make(chan []*remoting.Endpoint, num)
+			// defer close(decisions)
+
 			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
@@ -429,6 +453,8 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 		tname := fmt.Sprintf("classic round with %d nodes after succesful fast round with mixed values %d", tc.N, tn)
 		p.Run(tname, func() {
 			decisions := make(chan []*remoting.Endpoint, tc.N)
+			// defer close(decisions)
+
 			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
@@ -458,8 +484,9 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 			} else {
 				p.Require().Len(decision[0], 2)
 				var contains bool
+				expected := decision[0][0]
 				for _, v := range tc.DecisionChoices {
-					if v.Equal(decision[0][0]) {
+					if v.GetHostname() == expected.GetHostname() && v.GetPort() == expected.GetPort() {
 						contains = true
 						break
 					}

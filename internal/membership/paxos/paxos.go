@@ -2,13 +2,14 @@ package paxos
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
-
-	"github.com/cornelk/hashmap"
+	"unsafe"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 
@@ -120,10 +121,11 @@ func NewClassic(opts ...Option) (*Classic, error) {
 
 	c.log = c.log.With(zap.String("addr", endpointStr(c.myAddr)))
 	return &Classic{
-		config: c,
-		rnd:    &remoting.Rank{},
-		vrnd:   &remoting.Rank{},
-		crnd:   &remoting.Rank{},
+		config:          c,
+		rnd:             &remoting.Rank{},
+		vrnd:            &remoting.Rank{},
+		crnd:            &remoting.Rank{},
+		acceptResponses: &responsesByRank{data: make(map[uint64]map[uint64]*remoting.Phase2BMessage)},
 		//acceptResponses: make(map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage),
 		//acceptReponses2: sled.New(),
 	}, nil
@@ -143,7 +145,8 @@ type Classic struct {
 	vval            []*remoting.Endpoint
 	phase1bMessages []*remoting.Phase1BMessage
 	//acceptResponses map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage
-	acceptReponses2 hashmap.HashMap
+	acceptResponses *responsesByRank
+	// acceptReponses2 hashmap.HashMap
 
 	crnd *remoting.Rank
 	cval []*remoting.Endpoint
@@ -165,7 +168,6 @@ func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 	hash := epchecksum.Checksum(p.myAddr, 0)
 
 	p.crnd = &remoting.Rank{Round: round, NodeIndex: int32(hash)}
-	p.lock.Unlock()
 
 	p.log.Debug("Prepare called", zap.String("sender", addr), zap.String("round", proto.CompactTextString(p.crnd)))
 	req := &remoting.Phase1AMessage{
@@ -173,6 +175,8 @@ func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 		Sender:          p.myAddr,
 		Rank:            p.crnd,
 	}
+	p.lock.Unlock()
+
 	p.log.Debug("broadcasting phase 1a message", zap.String("msg", proto.CompactTextString(req)))
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
@@ -259,7 +263,8 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 		return
 	}
 
-	if !p.crnd.Equal(msg.GetRnd()) || len(p.cval) != 0 || len(proposal) == 0 {
+	// if !p.crnd.Equal(msg.GetRnd()) || len(p.cval) != 0 || len(proposal) == 0 {
+	if !rnkEquals(p.crnd, msg.GetRnd()) || len(p.cval) != 0 || len(proposal) == 0 {
 		p.lock.Unlock()
 		return
 	}
@@ -275,6 +280,10 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
+func rnkEquals(left, right *remoting.Rank) bool {
+	return left.GetRound() == right.GetRound() && left.GetNodeIndex() == right.GetNodeIndex()
+}
+
 // At acceptor, handle an accept message from a coordinator.
 func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessage) {
 	if msg.GetConfigurationId() != p.configurationID {
@@ -282,7 +291,8 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	}
 	p.log.Debug("handling phase2a message", zap.String("msg", proto.CompactTextString(msg)))
 
-	if compareRanks(p.rnd, msg.GetRnd()) > 0 || p.vrnd.Equal(msg.GetRnd()) {
+	// if compareRanks(p.rnd, msg.GetRnd()) > 0 || p.vrnd.Equal(msg.GetRnd()) {
+	if compareRanks(p.rnd, msg.GetRnd()) > 0 || rnkEquals(p.vrnd, msg.GetRnd()) {
 		return
 	}
 
@@ -314,16 +324,14 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 	if rnd == nil {
 		rnd = &remoting.Rank{}
 	}
-	mir, _ := p.acceptReponses2.GetOrInsert(epKey(rnd), &hashmap.HashMap{})
-	msgsInRound := mir.(*hashmap.HashMap)
-	msgsInRound.Set(epKey(msg.GetSender()), msg)
 
-	if msgsInRound.Len() > (p.membershipSize / 2) {
+	msgsInRound := p.acceptResponses.AddAndCount(rnd, msg)
+	if msgsInRound > (p.membershipSize / 2) {
 		decision := msg.GetEndpoints()
 		logArgs := []zap.Field{
 			zap.String("decision", endpointsStr(decision)),
 			zap.String("rnd", proto.CompactTextString(rnd)),
-			zap.Int("msgsInRound", msgsInRound.Len()),
+			zap.Int("msgsInRound", msgsInRound),
 		}
 		p.log.Debug("decided on", logArgs...)
 		if err := p.onDecide(decision); err != nil {
@@ -461,7 +469,8 @@ func getMaxVrnd(messages []*remoting.Phase1BMessage) *remoting.Rank {
 func collectVValsForMaxVrnd(messages []*remoting.Phase1BMessage, maxVrnd *remoting.Rank) [][]*remoting.Endpoint {
 	var collectedVvals [][]*remoting.Endpoint
 	for _, msg := range messages {
-		if !msg.GetVrnd().Equal(maxVrnd) {
+		// if !msg.GetVrnd().Equal(maxVrnd) {
+		if !rnkEquals(msg.GetVrnd(), maxVrnd) {
 			continue
 		}
 		vv := msg.GetVval()
@@ -481,4 +490,44 @@ func (p *Classic) resultLogger(prefix string) func(*remoting.RapidResponse, erro
 		}
 		p.log.Debug("successfully sent " + prefix)
 	}
+}
+
+type responsesByRank struct {
+	// rank -> endpoint -> message
+	data map[uint64]map[uint64]*remoting.Phase2BMessage
+	lock sync.Mutex
+}
+
+func (c *responsesByRank) AddAndCount(rank *remoting.Rank, msg *remoting.Phase2BMessage) int {
+	c.lock.Lock()
+	rk := RankChecksum(rank)
+	msgsInRound, found := c.data[rk]
+	if !found {
+		msgsInRound = make(map[uint64]*remoting.Phase2BMessage)
+		c.data[rk] = msgsInRound
+	}
+	msgsInRound[epchecksum.Checksum(msg.GetSender(), 0)] = msg
+	ln := len(msgsInRound)
+	c.lock.Unlock()
+	return ln
+}
+
+func RankChecksum(rnk *remoting.Rank) uint64 {
+	var hash uint64
+	bh := reflect.SliceHeader{
+		Data: uintptr(unsafe.Pointer(&rnk.NodeIndex)),
+		Len:  binary.Size(rnk.GetNodeIndex()),
+		Cap:  binary.Size(rnk.GetNodeIndex()),
+	}
+	buf := *(*[]byte)(unsafe.Pointer(&bh))
+
+	bh2 := reflect.SliceHeader{
+		Data: uintptr(unsafe.Pointer(&rnk.Round)),
+		Len:  binary.Size(rnk.Round),
+		Cap:  binary.Size(rnk.Round),
+	}
+	buf2 := *(*[]byte)(unsafe.Pointer(&bh2))
+
+	hash += hash*31 + xxhash.Checksum64(append(buf, buf2...))
+	return hash
 }

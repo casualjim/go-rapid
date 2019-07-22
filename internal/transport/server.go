@@ -5,21 +5,17 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
 
-	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_zap "github.com/grpc-ecosystem/go-grpc-middleware/logging/zap"
-	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/libp2p/go-reuseport"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -60,7 +56,7 @@ type Server struct {
 
 var (
 	bootstrapMsg = remoting.WrapResponse(&remoting.ProbeResponse{
-		Status: remoting.BOOTSTRAPPING,
+		Status: remoting.NodeStatus_BOOTSTRAPPING,
 	})
 )
 
@@ -87,7 +83,15 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 	log.Debug("handling request")
 	if d.membership() != nil {
 		log.Debug("handling with membership service")
-		return d.membership().Handle(ctx, req)
+		resp, err := d.membership().Handle(ctx, req)
+		if err == context.Canceled {
+			return nil, status.Errorf(codes.Canceled, "cancelled response")
+		}
+		if resp == nil || resp.Content == nil {
+			panic("got a nil response " + tn)
+		}
+		r := *resp
+		return &r, err
 	}
 	/*
 	 * This is a special case which indicates that:
@@ -107,6 +111,7 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 
 func (d *Server) Init() error {
 	l, err := reuseport.Listen("tcp", d.Config.Me.String())
+	// l, err := net.Listen("tcp", d.Config.Me.String())
 	if err != nil {
 		return err
 	}
@@ -123,22 +128,22 @@ func (d *Server) Init() error {
 		opts = append(opts, grpc.Creds(creds))
 	}
 
-	rh := grpc_recovery.WithRecoveryHandler(func(p interface{}) (err error) {
-		if e, ok := p.(error); ok {
-			d.Config.Log.Error("uncaught panic", zap.Error(e))
-			return status.Errorf(codes.Internal, "internal server error")
-		}
-		msg := fmt.Sprintf("%v", p)
-		d.Config.Log.Error(msg)
-		return status.Error(codes.Internal, msg)
-	})
-
-	opts = append(opts,
-		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-			grpc_recovery.UnaryServerInterceptor(rh),
-			grpc_zap.UnaryServerInterceptor(d.Config.Log.Named("grpc")),
-		)),
-	)
+	//rh := grpc_recovery.WithRecoveryHandler(func(p interface{}) (err error) {
+	//	if e, ok := p.(error); ok {
+	//		d.Config.Log.Error("uncaught panic", zap.Error(e))
+	//		return status.Errorf(codes.Internal, "internal server error")
+	//	}
+	//	msg := fmt.Sprintf("%v", p)
+	//	d.Config.Log.Error(msg)
+	//	return status.Error(codes.Internal, msg)
+	//})
+	//
+	//opts = append(opts,
+	//	grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+	//		grpc_recovery.UnaryServerInterceptor(rh),
+	//		grpc_zap.UnaryServerInterceptor(d.Config.Log.Named("grpc")),
+	//	)),
+	//)
 
 	d.grpc = grpc.NewServer(opts...)
 	remoting.RegisterMembershipServiceServer(d.grpc, d)

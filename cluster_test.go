@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"reflect"
 	"runtime"
 	"sync"
 	"syscall"
@@ -44,6 +45,7 @@ func newTestClusters(t testing.TB, addMetadata bool, options ...Option) *testClu
 		options:     options,
 		addMetadata: addMetadata,
 		log:         devLogger(t),
+		// log:         zap.NewNop(),
 	}
 }
 
@@ -98,16 +100,14 @@ func (c *testClusters) ExtendClusterN(numNodes int, seedEndpoint *remoting.Endpo
 
 	for i := 0; i < numNodes; i++ {
 		wg.Add(1)
-
-		go func(i int) {
+		go func(idx int, log *zap.Logger) {
 			defer wg.Done()
 
 			joiningEndpoint := mkAddr(freeport.MustNext())
-			nm := fmt.Sprintf("joiner-%d", i+1)
-			nonSeed := c.BuildCluster(joiningEndpoint, seedEndpoint, WithLogger(c.log.Named(nm)))
+			nonSeed := c.BuildCluster(joiningEndpoint, seedEndpoint, WithLogger(log))
 			c.require.NoError(nonSeed.Start())
 			c.instances.Set(c.key(joiningEndpoint), nonSeed)
-		}(i)
+		}(i, c.log.Named(fmt.Sprintf("joiner-%d", c.instances.Len())).With(zap.String("component", fmt.Sprintf("joiner-%d", i+1))))
 	}
 
 	wg.Wait()
@@ -122,11 +122,20 @@ func (c *testClusters) VerifyCluster(expectedSize int) {
 			any = cluster.Members()
 		}
 		c.require.Equal(expectedSize, cluster.Size(), cluster.String())
-		c.require.Equal(any, cluster.Members(), cluster.String())
+		c.verifyProposal(any, cluster.Members())
 
 		if c.addMetadata {
 			c.require.Len(cluster.Metadata(), expectedSize)
 		}
+	}
+}
+
+func (c *testClusters) verifyProposal(left, right []*remoting.Endpoint) {
+	c.require.Equal(len(left), len(right))
+	for i, l := range left {
+		r := right[i]
+		c.require.Equal(l.GetHostname(), r.GetHostname())
+		c.require.Equal(l.GetPort(), r.GetPort())
 	}
 }
 
@@ -141,7 +150,7 @@ func (c *testClusters) WaitAndVerifyAgreement(expectedSize, maxTries int, interv
 				any = cluster.Members()
 			}
 
-			if cluster.Size() != expectedSize || assert.ObjectsAreEqual(any, cluster.Members()) {
+			if cluster.Size() != expectedSize || !reflect.DeepEqual(any, cluster.Members()) {
 				// can't bail, have to drain the iterator
 				ready = false
 			}
@@ -182,10 +191,9 @@ func TestCluster_SingleNodeJoinsThroughSeed(t *testing.T) {
 }
 
 func TestCluster_TenNodesJoinSequentially(t *testing.T) {
-	const numNodes = 10
+	const numNodes = 9
 
 	var (
-		log          = devLogger(t)
 		clusters     = newTestClusters(t, false)
 		seedEndpoint = mkAddr(freeport.MustNext())
 	)
@@ -194,10 +202,7 @@ func TestCluster_TenNodesJoinSequentially(t *testing.T) {
 	clusters.VerifyCluster(1)
 
 	for i := 0; i < numNodes; i++ {
-		log.Info("*************************************************************************************************")
-		log.Info(fmt.Sprintf("***                                 Nodes: %d/%d                                             ***", i, numNodes))
-		log.Info("*************************************************************************************************")
 		clusters.ExtendClusterN(1, seedEndpoint)
-		clusters.WaitAndVerifyAgreement(i+2, 100, 200*time.Millisecond)
+		clusters.WaitAndVerifyAgreement(i+2, 15, time.Second)
 	}
 }
