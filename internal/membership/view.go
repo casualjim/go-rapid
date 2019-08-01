@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"sync/atomic"
 
 	"github.com/Workiva/go-datastructures/common"
 
@@ -58,8 +57,7 @@ func NewView(k int, nodeIDs []*remoting.NodeId, nodeAddrs []*remoting.Endpoint) 
 		k:                           k,
 		rings:                       rings,
 		identifiersSeen:             seenIdentifiers,
-		configID:                    -1,
-		shouldUpdateConfigurationID: 1,
+		shouldUpdateConfigurationID: true,
 	}
 }
 
@@ -70,8 +68,8 @@ type View struct {
 	rings                       []*endpointList
 	lock                        sync.RWMutex
 	identifiersSeen             *nodeIDList
-	configID                    int64
-	shouldUpdateConfigurationID uint32
+	config                      *Configuration
+	shouldUpdateConfigurationID bool
 }
 
 // IsSafeToJoin queries if a host with a logical identifier is safe to add to the network.
@@ -121,7 +119,8 @@ func (v *View) RingAdd(addr *remoting.Endpoint, id *remoting.NodeId) error {
 	}
 
 	v.identifiersSeen.Add(id)
-	atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
+	//atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
+	v.shouldUpdateConfigurationID = true
 	return nil
 }
 
@@ -140,7 +139,8 @@ func (v *View) RingDel(addr *remoting.Endpoint) error {
 		v.rings[k].Remove(addr)
 	}
 
-	atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
+	v.shouldUpdateConfigurationID = true
+	//atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
 	return nil
 }
 
@@ -326,51 +326,26 @@ func (v *View) ringNumbers(monitor, monitoree *remoting.Endpoint) []int32 {
 
 // ConfigurationID for the current set of identifiers and nodes
 func (v *View) ConfigurationID() int64 {
-	if atomic.CompareAndSwapUint32(&v.shouldUpdateConfigurationID, 1, 0) {
-		v.lock.RLock()
-		atomic.StoreInt64(&v.configID, configurationIDFromTreeset(v.identifiersSeen, v.rings[0]))
-		v.lock.RUnlock()
-	}
-	return atomic.LoadInt64(&v.configID)
+	return v.Configuration().ConfigID
 }
 
-// configuration object that contains the list of nodes in the membership view
+// Configuration object that contains the list of nodes in the membership view
 // as well as the identifiers seen so far. These two lists suffice to bootstrap an
 // identical copy of the MembershipView object.
-func (v *View) configuration() *configuration {
-	v.lock.RLock()
-	c := newConfiguration(v.identifiersSeen, v.rings[0])
-	v.lock.RUnlock()
-	return c
+func (v *View) Configuration() *Configuration {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if v.shouldUpdateConfigurationID {
+		newConfig := newConfiguration(v.identifiersSeen, v.rings[0])
+		v.config = newConfig
+		v.shouldUpdateConfigurationID = false
+	}
+	return v.config
 }
 
-func configurationIDFromTreeset(identifiers *nodeIDList, nodes *endpointList) int64 {
-	var hash uint64 = 1
-
-	identifiers.Each(func(i int, id *remoting.NodeId) bool {
-		lb := make([]byte, 8)
-		hb := make([]byte, 8)
-		binary.LittleEndian.PutUint64(hb, uint64(id.GetHigh()))
-		binary.LittleEndian.PutUint64(lb, uint64(id.GetLow()))
-
-		hash = hash*37 + xxhash.Checksum64(hb)
-		hash = hash*37 + xxhash.Checksum64(lb)
-		return true
-	})
-
-	nodes.Each(func(i int, addr *remoting.Endpoint) bool {
-		prt := make([]byte, 4)
-		binary.LittleEndian.PutUint32(prt, uint32(addr.Port))
-
-		hash = hash*37 + xxhash.ChecksumString64(addr.Hostname)
-		hash = hash*37 + xxhash.Checksum64(prt)
-		return true
-	})
-	return int64(hash)
-}
-
-// newConfiguration initializes a new configuration object from identifiers and nodes
-func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *configuration {
+// newConfiguration initializes a new Configuration object from identifiers and nodes
+func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *Configuration {
 	idfs := make([]*remoting.NodeId, identifiers.Len())
 	var hash uint64 = 1
 	identifiers.Each(func(i int, id *remoting.NodeId) bool {
@@ -393,23 +368,23 @@ func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *configurati
 		return true
 	})
 
-	return &configuration{
+	return &Configuration{
 		Identifiers: idfs,
 		Nodes:       nds,
 		ConfigID:    int64(hash),
 	}
 }
 
-// The configuration object contains a list of nodes in the membership view as well as a list of UUIDs.
+// The Configuration object contains a list of nodes in the membership view as well as a list of UUIDs.
 // An instance of this object created from one MembershipView object contains the necessary information
 // to bootstrap an identical membership.View object.
-type configuration struct {
+type Configuration struct {
 	Identifiers []*remoting.NodeId
 	Nodes       []*remoting.Endpoint
 	ConfigID    int64
 }
 
-func (c *configuration) String() string {
+func (c *Configuration) String() string {
 	if c == nil {
 		return "null"
 	}

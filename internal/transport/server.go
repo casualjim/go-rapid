@@ -87,9 +87,6 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 		if err == context.Canceled {
 			return nil, status.Errorf(codes.Canceled, "cancelled response")
 		}
-		if resp == nil || resp.Content == nil {
-			panic("got a nil response " + tn)
-		}
 		r := *resp
 		return &r, err
 	}

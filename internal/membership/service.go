@@ -162,7 +162,7 @@ func (s *Service) Start() error {
 		paxos.ConfigurationID(s.view.ConfigurationID()),
 		paxos.MembershipSize(s.view.Size()),
 		paxos.Client(s.client),
-		paxos.Logger(s.log),
+		// paxos.Logger(s.log),
 		paxos.Broadcaster(s.broadcaster),
 		paxos.OnDecision(s.onDecideViewChange),
 	)
@@ -257,6 +257,7 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 			Metadata: md,
 		})
 	}
+	s.updateLock.Unlock()
 
 	ccid := s.view.ConfigurationID()
 	// Publish an event to the listeners.
@@ -264,12 +265,15 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 
 	s.cutDetector.Clear()
 	s.announcedProposal.Set(true, false)
+	//s.log.Debug("**********************************************************************************")
+	//s.log.Debug("REFRESHING PAXOS", zap.Int64("config", ccid))
+	//s.log.Debug("**********************************************************************************")
 	paxosInstance, err := paxos.New(
 		paxos.Address(s.me.Addr),
 		paxos.ConfigurationID(ccid),
 		paxos.MembershipSize(s.view.Size()),
 		paxos.Client(s.client),
-		paxos.Logger(s.log),
+		// paxos.Logger(s.log),
 		paxos.Broadcaster(s.broadcaster),
 		paxos.OnDecision(s.onDecideViewChange),
 	)
@@ -277,7 +281,6 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 		return err
 	}
 	s.paxos.Store(paxosInstance)
-	s.updateLock.Unlock()
 	s.broadcaster.SetMembership(s.view.GetRing(0))
 
 	if s.view.IsHostPresent(s.me.Addr) {
@@ -293,7 +296,7 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 }
 
 func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
-	s.log.Debug("creating failure detectors for the current configuration", zap.Int64("config", s.view.ConfigurationID()))
+	s.log.Debug("creating failure detectors for the current Configuration", zap.Int64("config", s.view.ConfigurationID()))
 	subjects, err := s.view.SubjectsOf(s.me.Addr)
 	if err != nil {
 		return err
@@ -307,7 +310,7 @@ func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
 }
 
 func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
-	config := s.view.configuration()
+	config := s.view.Configuration()
 	response := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
 		StatusCode:      remoting.JoinStatusCode_SAFE_TO_JOIN,
@@ -332,7 +335,7 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 		cid := s.view.ConfigurationID()
 		if configID != cid {
 			s.log.Debug(
-				"Ignoring failure notification from old configuration",
+				"Ignoring failure notification from old Configuration",
 				zap.String("subject", epStr(endpoint)),
 				zap.Int64("old_config", configID),
 				zap.Int64("config", cid))
@@ -432,25 +435,42 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		}
 	}
 
-	s.log.Debug(
-		"wrong configuration",
+	s.log.Info(
+		"Wrong configuration",
 		zap.String("sender", epStr(req.GetSender())),
 		zap.Int64("config", ccid),
 		zap.Int64("proposed", req.GetConfigurationId()),
 		zap.Int("size", s.view.Size()),
+		zap.Reflect("view", s.view.GetRing(0)),
 	)
-	config := s.view.configuration()
+	config := s.view.Configuration()
 
 	resp := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
-		ConfigurationId: ccid,
+		ConfigurationId: config.ConfigID,
 		StatusCode:      remoting.JoinStatusCode_CONFIG_CHANGED,
 	}
 
 	if s.view.IsHostPresent(req.GetSender()) && s.view.IsIdentifierPresent(req.GetNodeId()) {
+		s.log.Info(
+			"Joining host that's already present",
+			zap.String("sender", epStr(req.GetSender())),
+			zap.Int64("current_config", ccid),
+			zap.Int64("config", config.ConfigID),
+			zap.Int64("proposed", req.GetConfigurationId()),
+			zap.Int("size", s.view.Size()),
+		)
 		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
 		resp.Endpoints = config.Nodes
 		resp.Identifiers = config.Identifiers
+	} else {
+		s.log.Info(
+			"returning CONFIG_CHANGED",
+			zap.String("sender", epStr(req.GetSender())),
+			zap.Int64("current_config", ccid),
+			zap.Int64("config", config.ConfigID),
+			zap.Int("size", s.view.Size()),
+		)
 	}
 
 	return remoting.WrapResponse(resp), nil
@@ -557,7 +577,7 @@ func (s *Service) filterAlertMessage(batched *remoting.BatchedAlertMessage, msg 
 	}
 
 	if msg.GetEdgeStatus() == remoting.EdgeStatus_DOWN && !s.view.IsHostPresent(dest) {
-		log.Debug("alert message with status DOWN received, already in configuration")
+		log.Debug("alert message with status DOWN received, already in Configuration")
 		return false
 	}
 

@@ -146,13 +146,13 @@ func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
 func (b *MultiNodeCutDetector) InvalidateFailingLinks(view *View) ([]*remoting.Endpoint, error) {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+
 	if !b.seenLinkDown {
 		b.log.Debug("no invalid links seen, returning")
 		return nil, nil
 	}
-
-	b.lock.Lock()
-	defer b.lock.Unlock()
 
 	var proposalsToReturn []*remoting.Endpoint
 	for _, nodeInFlux := range b.preProposal {

@@ -63,11 +63,13 @@ func New(opts ...Option) (*Fast, error) {
 	}
 
 	c.onDecide = func(endpoints []*remoting.Endpoint) error {
-		atomic.CompareAndSwapInt32(&cons.decided, 0, 1)
-		cons.cancelLock.Lock()
-		cons.cancelClassic()
-		cons.cancelLock.Unlock()
-		return cons.onDecide(endpoints)
+		if atomic.CompareAndSwapInt32(&cons.decided, 0, 1) {
+			cons.cancelLock.Lock()
+			cons.cancelClassic()
+			cons.cancelLock.Unlock()
+			return cons.onDecide(endpoints)
+		}
+		return nil
 	}
 
 	cons.classic = &Classic{
@@ -93,6 +95,7 @@ type Fast struct {
 	jitterRate       float64
 	votesPerProposal counterMap
 	votesReceived    *syncEndpointSet
+	paxosLock        sync.Mutex
 	cancelLock       sync.Mutex
 	cancelClassic    func()
 	classic          *Classic
@@ -102,7 +105,9 @@ type Fast struct {
 // Propose a value for a fast round with a delay to trigger the recovery protocol.
 // when recoverydelay is 0, it will use a random recovery delay
 func (f *Fast) Propose(ctx context.Context, vote []*remoting.Endpoint, recoveryDelay time.Duration) {
+	f.paxosLock.Lock()
 	f.classic.registerFastRoundVote(vote)
+	f.paxosLock.Unlock()
 
 	req := &remoting.FastRoundPhase2BMessage{
 		Endpoints:       vote,
@@ -128,7 +133,9 @@ func (f *Fast) startClassicPaxosRound() {
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
+	f.paxosLock.Lock()
 	f.classic.startPhase1a(context.Background(), 2)
+	f.paxosLock.Unlock()
 }
 
 // Invoked by the membership service when it receives a proposal for a fast round.
@@ -144,23 +151,23 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 		return
 	}
 
-	// key := epKey(msg.GetSender())
+	f.paxosLock.Lock()
+	defer f.paxosLock.Unlock()
 	if added := f.votesReceived.Add(msg.GetSender()); !added {
 		return
 	}
 
 	count := f.votesPerProposal.IncrementAndGet(msg.GetEndpoints())
-	//  n – (n-1)/3
-	// fr2 := math.Floor(float64(f.membershipSize)-1)/(f-membershipSize/2)
-	fr := int(math.Floor(float64(f.membershipSize-1) / 4.0)) // Fast Paxos resiliency.
+	maxFaults := int(math.Floor(float64(f.membershipSize-1) / 4.0)) // Fast Paxos resiliency.
+	quorumSize := f.membershipSize - maxFaults
 
-	if f.votesReceived.Len() < (f.membershipSize - fr) {
+	if f.votesReceived.Len() < quorumSize {
 		f.log.Debug(
 			"fast round bailing",
 			zap.Int("count", count),
 			zap.Int("votes_received", f.votesReceived.Len()),
 			zap.Int("membership_size", f.membershipSize),
-			zap.Int("fastpaxos_resiliency", fr),
+			zap.Int("quorumSize", quorumSize),
 		)
 		return
 	}
@@ -168,11 +175,11 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 		"fast round deciding",
 		zap.Int("count", count),
 		zap.Int("membership_size", f.membershipSize),
-		zap.Int("fastpaxos_resiliency", fr),
+		zap.Int("quorumSize", quorumSize),
 		zap.String("endpoints", endpointsStr(msg.GetEndpoints())),
 	)
 
-	if count >= f.membershipSize-fr {
+	if count >= quorumSize {
 		f.log.Debug("decided on a view change", zap.String("endpoints", endpointsStr(msg.GetEndpoints())))
 		// We have a successful proposal. Consume it.
 		if err := f.onDecide(msg.GetEndpoints()); err != nil {
@@ -184,7 +191,7 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 			"fast round may not succeed for proposal",
 			zap.Int("count", count),
 			zap.Int("membership_size", f.membershipSize),
-			zap.Int("fastpaxos_resiliency", fr),
+			zap.Int("quorumSize", quorumSize),
 			zap.String("endpoints", endpointsStr(msg.GetEndpoints())),
 		)
 	}

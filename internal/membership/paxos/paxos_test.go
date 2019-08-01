@@ -398,7 +398,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 	for _, num := range p.numNodes() {
 		p.Run(fmt.Sprintf("classic round for %d nodes after successful fast round", num), func() {
 			decisions := make(chan []*remoting.Endpoint, num)
-			// defer close(decisions)
+			defer close(decisions)
 
 			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
 				decisions <- nodes
