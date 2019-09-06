@@ -23,11 +23,6 @@ func Endpoint(addr string) (*remoting.Endpoint, error) {
 	return &remoting.Endpoint{Hostname: h, Port: int32(pp)}, nil
 }
 
-type entry struct {
-	Key   *remoting.Endpoint
-	Value *remoting.Metadata
-}
-
 // MetadataRegistry per-node metadata which is immutable.
 // These are simple tags like roles or other configuration parameters.
 type MetadataRegistry struct {

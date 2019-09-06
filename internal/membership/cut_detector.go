@@ -131,9 +131,7 @@ func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey 
 		if b.updatesInProgress == 0 {
 			b.proposalCount++
 			ret := make([]*remoting.Endpoint, len(b.proposals))
-			for i, endp := range b.proposals {
-				ret[i] = endp
-			}
+			copy(ret, b.proposals)
 			b.proposals = nil
 			b.log.Debug("returning results because there are no more updates in progress", zap.Int("results", len(ret)))
 			return ret

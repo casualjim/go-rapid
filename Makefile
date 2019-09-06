@@ -1,7 +1,7 @@
 # vim: ft=make
 
 GO ?= go
-GOVERSION ?= go1.12.7
+GOVERSION ?= go1.13
 SHELL := /bin/bash
 GIT_VERSION = $(shell git describe --tags)
 
@@ -25,7 +25,7 @@ coverage: check ## Runs coverage in all packages
 .PHONY: update-deps
 update-deps: ## Updates the dependencies with flattened vendor and without test files
 	@echo updating deps...
-	@go get -u $(go list -m)/...
+	@go get -u $$($(GO) list -m)/...
 
 .PHONY: goversion
 goversion: ## Checks if installed go version is latest
@@ -34,7 +34,7 @@ goversion: ## Checks if installed go version is latest
 
 .PHONY: checkfmt
 checkfmt: ## Checks code format
-	.travis/gofmtcheck.sh
+	.circleci/gofmtcheck.sh
 
 .PHONY: fmt
 fmt: ## format go code
@@ -56,6 +56,7 @@ go-generate: ## run go generate
 	$(GO) generate .
 
 .PHONY: devtools
+devtools: export GO111MODULE=off
 devtools: ## install necessary tools for development
 	@echo installing gotestsum
 	go get -u gotest.tools/gotestsum
@@ -65,7 +66,7 @@ devtools: ## install necessary tools for development
 	go get -u google.golang.org/grpc
 	go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
 	@echo installing mockery
-	go get github.com/vektra/mockery/cmd/mockery
+	go get -u github.com/vektra/mockery/cmd/mockery
 
 .PHONY: help
 help: ## Display make help

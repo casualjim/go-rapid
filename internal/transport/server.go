@@ -55,10 +55,14 @@ type Server struct {
 }
 
 var (
+	bootstrapMsg *remoting.RapidResponse
+)
+
+func init() {
 	bootstrapMsg = remoting.WrapResponse(&remoting.ProbeResponse{
 		Status: remoting.NodeStatus_BOOTSTRAPPING,
 	})
-)
+}
 
 func (d *Server) membership() membershipService {
 	v := d.memSvc.Load()

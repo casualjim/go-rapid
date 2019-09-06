@@ -191,6 +191,7 @@ func TestCluster_SingleNodeJoinsThroughSeed(t *testing.T) {
 }
 
 func TestCluster_TenNodesJoinSequentially(t *testing.T) {
+	t.Skip()
 	const numNodes = 9
 
 	var (

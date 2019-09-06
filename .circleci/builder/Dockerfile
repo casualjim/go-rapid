@@ -1,4 +1,4 @@
-FROM debian:testing
+FROM debian
 
 RUN set -e &&\
   apt-get update -yq &&\

@@ -15,7 +15,7 @@ func MustNext() int {
 
 // Next free port
 func Next() (port int, err error) {
-	listener, err := net.Listen("tcp", ":0")
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
@@ -36,7 +36,7 @@ func MustNextN(n int) []int {
 func NextN(n int) ([]int, error) {
 	result := make([]int, n)
 	for i := 0; i < n; i++ {
-		listener, err := net.Listen("tcp", ":0")
+		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return nil, err
 		}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/mattn/go-colorable"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/broadcast"
@@ -19,6 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
 
@@ -45,10 +47,15 @@ type messagingSuite struct {
 }
 
 func (m *messagingSuite) SetupSuite() {
-	lg, err := zap.NewDevelopment()
-	m.Require().NoError(err)
-	zap.ReplaceGlobals(lg)
-	m.log = lg
+	enc := zap.NewDevelopmentEncoderConfig()
+	enc.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	l := zap.New(zapcore.NewCore(
+		zapcore.NewConsoleEncoder(enc),
+		zapcore.AddSync(colorable.NewColorableStdout()),
+		zapcore.DebugLevel,
+	))
+	zap.ReplaceGlobals(l)
+	m.log = l
 }
 
 func (m *messagingSuite) SetupTest() {
