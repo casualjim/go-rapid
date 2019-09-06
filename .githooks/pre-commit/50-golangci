@@ -1,0 +1,16 @@
+#!/bin/bash
+
+brblue="\e[34;1m"
+brgrn="\e[32m"
+bryllw="\e[33;1m"
+creset="\e[0m"
+
+barrow="${brblue} =>${creset}"
+yarrow="${bryllw}    ->${creset}"
+
+set -e -o pipefail
+
+printf "%b running %blinters%b\n" "${barrow}" "${brgrn}" "${creset}"
+printf "%b running golangci-lint\n" "${yarrow}"
+golangci-lint run
+

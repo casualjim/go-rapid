@@ -1,0 +1,23 @@
+#!/bin/bash
+
+brblue="\e[34;1m"
+brgrn="\e[32m"
+bryllw="\e[33;1m"
+creset="\e[0m"
+
+barrow="${brblue} =>${creset}"
+yarrow="${bryllw}    ->${creset}"
+
+set -e -o pipefail
+
+printf "%b cleaning up %bgo.mod%b\n" "${barrow}" "${brgrn}" "${creset}"
+
+printf "%b running go mod tidy\n" "${yarrow}"
+go mod tidy
+
+printf "%b stage go.mod\n" "${yarrow}"
+git add go.mod
+
+printf "%b stage go.sum\n" "${yarrow}"
+git add go.sum
+

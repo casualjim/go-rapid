@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -e -o pipefail
+brprpl="\e[35;1m"
+brgrn="\e[32m"
+creset="\e[0m"
+
+warrow="${brprpl}=>${creset}"
+
+printf "%b running %bpre-commit hooks%b\n" "${warrow}" "${brgrn}" "${creset}"
+
+

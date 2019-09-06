@@ -29,8 +29,7 @@ type Event struct {
 func (ev Event) MarshalLogObject(enc zapcore.ObjectEncoder) error {
 	enc.AddString("name", ev.Name)
 	enc.AddTime("at", ev.At)
-	enc.AddReflected("args", ev.Args)
-	return nil
+	return enc.AddReflected("args", ev.Args)
 }
 
 // NOOPHandler drops events on the floor without taking action
