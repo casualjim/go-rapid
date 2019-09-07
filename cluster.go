@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/transport"
+	"github.com/casualjim/go-rapid/remoting"
 	"go.uber.org/zap"
 
 	"golang.org/x/sync/errgroup"
@@ -19,10 +21,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"github.com/casualjim/go-rapid/internal/edgefailure"
-
-	"github.com/casualjim/go-rapid/api"
-
-	"github.com/casualjim/go-rapid/remoting"
 )
 
 const (
