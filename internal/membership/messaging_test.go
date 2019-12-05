@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"google.golang.org/grpc/test/bufconn"
 	"sync"
 	"testing"
 	"time"
@@ -44,6 +45,7 @@ type messagingSuite struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	log        *zap.Logger
+	bufc *bufconn.Listener
 }
 
 func (m *messagingSuite) SetupSuite() {
@@ -403,6 +405,9 @@ func (m *messagingSuite) makeClient(name string, port int) (*remoting.Endpoint, 
 	opts := transport.DefaultSettings(api.NewNode(addr, nil))
 	// opts.GRPCRetries = 1
 	opts.Log = /* m.log.Named(name) */ zap.NewNop()
+	//bufd := grpc.WithContextDialer(func(i context.Context, s string) (conn net.Conn, e error) {
+	//	return m.bufc.Dial()
+	//})
 	return addr, transport.NewGRPCClient(&opts, grpc.WithInsecure())
 }
 
@@ -413,13 +418,24 @@ func (m *messagingSuite) createAndStartMembershipService(name string, addr *remo
 	log.Info("adding server", zap.Stringer("endpoint", addr))
 
 	trSettings := transport.DefaultServerSettings(node)
+	//trSettings, bufc := transport.DefaultServerSettings(node).InMemoryTransport(4096*1024)
 	// trSettings.Log = log.Named("transport")
 	trSettings.Log = zap.NewNop()
 
+	//m.bufc = bufc
+	//bufd := grpc.WithContextDialer(func(i context.Context, s string) (conn net.Conn, e error) {
+	//	return bufc.Dial()
+	//})
+	//grpc.WithContextDialer(func(ctx context.Context, address string) (net.Conn, error) {
+	//	return nw.ContextDialer(func(context.Context, string, string) (net.Conn, error) {
+	//		return bcLis.Dial()
+	//	})(ctx, "", "")
+	//})
 	client := transport.NewGRPCClient(&trSettings.Settings, grpc.WithInsecure())
 	server := &transport.Server{
 		Config: &trSettings,
 	}
+
 	m.Require().NoError(server.Init())
 
 	if view == nil {

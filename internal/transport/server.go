@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
+	"google.golang.org/grpc/test/bufconn"
 	"io/ioutil"
 	"net"
 	"reflect"
@@ -34,6 +35,13 @@ type ServerSettings struct {
 	Certificate    string
 	CertificateKey string
 	ExtraOpts      []grpc.ServerOption
+	listener net.Listener
+}
+
+func (s ServerSettings) InMemoryTransport(bufSize int) (ServerSettings, *bufconn.Listener) {
+	lis := bufconn.Listen(bufSize)
+	s.listener = lis
+	return s, lis
 }
 
 func (s *ServerSettings) RegisterFlags(fls *flag.FlagSet) {
@@ -111,17 +119,22 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 }
 
 func (d *Server) Init() error {
-	l, err := reuseport.Listen("tcp", d.Config.Me.String())
-	// l, err := net.Listen("tcp", d.Config.Me.String())
-	if err != nil {
-		return err
+	if d.Config.listener == nil {
+		l, err := reuseport.Listen("tcp", d.Config.Me.String())
+
+		// l, err := net.Listen("tcp", d.Config.Me.String())
+		if err != nil {
+			return err
+		}
+		d.l = l
+	} else {
+		d.l = d.Config.listener
 	}
-	d.l = l
 
 	opts := d.Config.ExtraOpts
 	if d.Config.Certificate != "" && d.Config.CertificateKey != "" {
 		var creds credentials.TransportCredentials
-		creds, err = mkTLSConfig(d.Config)
+		creds, err := mkTLSConfig(d.Config)
 		if err != nil {
 			return err
 		}
@@ -148,6 +161,7 @@ func (d *Server) Init() error {
 
 	d.grpc = grpc.NewServer(opts...)
 	remoting.RegisterMembershipServiceServer(d.grpc, d)
+
 	return nil
 }
 
@@ -192,6 +206,9 @@ func mkTLSConfig(scfg *ServerSettings) (credentials.TransportCredentials, error)
 		// See security linter code: https://github.com/securego/gosec/blob/master/rules/tls_config.go#L11
 		// These ciphersuites support Forward Secrecy: https://en.wikipedia.org/wiki/Forward_secrecy
 		CipherSuites: []uint16{
+			tls.TLS_AES_128_GCM_SHA256,
+			tls.TLS_AES_256_GCM_SHA384,
+			tls.TLS_CHACHA20_POLY1305_SHA256,
 			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
 			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
