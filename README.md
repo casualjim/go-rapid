@@ -1,4 +1,4 @@
-[![CircleCI](https://circleci.com/gh/casualjim/go-rapid.svg?style=svg)](https://circleci.com/gh/casualjim/go-rapid) [![codecov](https://codecov.io/gh/casualjim/go-rapid/branch/master/graph/badge.svg)](https://codecov.io/gh/casualjim/go-rapid)
+![Go](https://github.com/casualjim/go-rapid/workflows/Go/badge.svg) [![codecov](https://codecov.io/gh/casualjim/go-rapid/branch/master/graph/badge.svg)](https://codecov.io/gh/casualjim/go-rapid)
 
 What is Rapid?
 ==============
