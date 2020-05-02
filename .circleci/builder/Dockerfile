@@ -10,13 +10,12 @@ RUN set -e &&\
   curl -sL https://dl.google.com/go/$(curl --silent https://golang.org/doc/devel/release.html | grep -Eo 'go[0-9]+(\.[0-9]+)+' | sort -V | uniq | tail -1).linux-amd64.tar.gz | tar -C /usr/local -xz &&\
   export PATH=/usr/local/go/bin:$PATH &&\
   go get -u golang.org/x/tools/cmd/... &&\
-  go get -u gotest.tools/gotestsum &&\
-	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint &&\
+  GO111MODULE=on go get -u gotest.tools/gotestsum@latest &&\
+	GO111MODULE=on go get -u github.com/golangci/golangci-lint/cmd/golangci-lint@latest &&\
 	go get -u github.com/golang/protobuf/proto &&\
-  go get -u github.com/golang/protobuf/protoc-gen-go &&\
-	go get -u google.golang.org/grpc &&\
-	go get -u github.com/gogo/protobuf/protoc-gen-gogoslick &&\
-	go get -u github.com/vektra/mockery/cmd/mockery &&\
+  GO111MODULE=on go get -u github.com/golang/protobuf/protoc-gen-go@latest &&\
+	GO111MODULE=on go get -u google.golang.org/grpc@latest &&\
+	GO111MODULE=on go get -u github.com/vektra/mockery/cmd/mockery@latest &&\
   apt-get autoremove -yqq &&\
   apt-get clean -y &&\
   apt-get autoclean -yqq &&\

@@ -31,12 +31,10 @@ function partial_progress() {
 cd "$(git rev-parse --show-toplevel)" || exit 1
 section "generating rapid grpc api"
 
-GOPATH="${GOPATH-$(go env GOPATH)}"
 task "golang"
 progress "generating golang code"
 protoc \
   -I=remoting \
-  -I="$(go env GOPATH)/src/github.com/gogo/protobuf" \
-  -I="$(go env GOPATH)/src/github.com/gogo/protobuf/protobuf" \
+  -I="$(go list -m -f '{{ .Dir }}' github.com/golang/protobuf)" \
   --go_out=plugins=grpc:remoting \
   remoting/rapid.proto

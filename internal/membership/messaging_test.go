@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"google.golang.org/grpc/test/bufconn"
 	"sync"
 	"testing"
 	"time"
+
+	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/google/uuid"
 	"github.com/mattn/go-colorable"
@@ -45,7 +46,7 @@ type messagingSuite struct {
 	ctx        context.Context
 	cancel     context.CancelFunc
 	log        *zap.Logger
-	bufc *bufconn.Listener
+	bufc       *bufconn.Listener
 }
 
 func (m *messagingSuite) SetupSuite() {

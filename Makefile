@@ -62,9 +62,8 @@ devtools: ## install necessary tools for development
 	go get -u gotest.tools/gotestsum
 	go get -u github.com/golangci/golangci-lint/cmd/golangci-lint
 	@echo installing grpc
-	go get -u github.com/golang/protobuf/{proto,protoc-gen-go}
+	go get -u google.golang.org/protobuf/{proto,protoc-gen-go}
 	go get -u google.golang.org/grpc
-	go get -u github.com/gogo/protobuf/protoc-gen-gogoslick
 	@echo installing mockery
 	go get -u github.com/vektra/mockery/cmd/mockery
 

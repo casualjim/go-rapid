@@ -3,13 +3,12 @@ package paxos
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/gogo/protobuf/proto"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"
@@ -146,7 +145,7 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 		return
 	}
 
-	f.log.Debug("handling fast round proposal", zap.String("req", proto.CompactTextString(msg)))
+	f.log.Debug("handling fast round proposal", zap.String("req", protojson.Format(msg)))
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}

@@ -5,12 +5,13 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"flag"
-	"google.golang.org/grpc/test/bufconn"
 	"io/ioutil"
 	"net"
 	"reflect"
 	"sync"
 	"sync/atomic"
+
+	"google.golang.org/grpc/test/bufconn"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -35,7 +36,7 @@ type ServerSettings struct {
 	Certificate    string
 	CertificateKey string
 	ExtraOpts      []grpc.ServerOption
-	listener net.Listener
+	listener       net.Listener
 }
 
 func (s ServerSettings) InMemoryTransport(bufSize int) (ServerSettings, *bufconn.Listener) {

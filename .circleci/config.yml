@@ -52,12 +52,12 @@ jobs:
 
       - run:
           name: Run unit tests with code coverage
-          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f short-verbose -- -timeout=20m -coverprofile=coverage.txt -covermode=atomic ./...
+          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f pkgname-and-test-fails -- -p 1 -timeout=20m -coverprofile=coverage.txt -covermode=atomic ./...
           no_output_timeout: 30m
 
       - run:
           name: Run unit tests with race detection
-          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f short-verbose -- -race -timeout=20m ./...
+          command: gotestsum --junitfile /usr/share/testresults/go-test-report.xml -f pkgname-and-test-fails -- -p 1 -race -timeout=20m ./...
           no_output_timeout: 30m
 
       - run:

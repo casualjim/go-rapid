@@ -3,10 +3,11 @@ package paxos
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"sync"
 
-	"github.com/gogo/protobuf/proto"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/cornelk/hashmap"
 
@@ -98,7 +99,7 @@ func (d *DirectBroadcaster) Broadcast(ctx context.Context, req *remoting.RapidRe
 	}
 
 	d.paxosInstances.EachKey(func(k *remoting.Endpoint) {
-		d.log.Info(fmt.Sprint("broadcasting to", endpointStr(k), "message:", proto.CompactTextString(req)))
+		d.log.Info(fmt.Sprint("broadcasting to", endpointStr(k), "message:", protojson.Format(req)))
 		go func() {
 			_, err := d.client.Do(ctx, k, req)
 			if err != nil {

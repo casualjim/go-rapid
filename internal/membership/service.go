@@ -3,13 +3,12 @@ package membership
 import (
 	"context"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/gogo/protobuf/proto"
 
 	"github.com/nayuta87/queue"
 
@@ -477,7 +476,7 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 }
 
 func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.BatchedAlertMessage) (*remoting.RapidResponse, error) {
-	s.log.Debug("handling batched alert message", zap.String("batch", proto.CompactTextString(req)))
+	s.log.Debug("handling batched alert message", zap.String("batch", protojson.Format(req)))
 	if s.announcedProposal.Value() {
 		s.log.Debug("replying with default response, because already announced")
 		return defaultResponse, nil

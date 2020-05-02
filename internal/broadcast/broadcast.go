@@ -2,15 +2,14 @@ package broadcast
 
 import (
 	"context"
+	"google.golang.org/protobuf/encoding/protojson"
 	"math/rand"
 	"sync"
 	"time"
 
 	"github.com/casualjim/go-rapid/api"
-	"github.com/gogo/protobuf/proto"
-	"go.uber.org/zap"
-
 	"github.com/casualjim/go-rapid/remoting"
+	"go.uber.org/zap"
 )
 
 // Broadcaster interface different broadcasting mechanisms can implement
@@ -127,7 +126,7 @@ func (u *unicastFiltered) Broadcast(ctx context.Context, req *remoting.RapidRequ
 		}
 	}
 
-	u.log.Debug("broadcasting", zap.Int("member_count", len(u.members)), zap.String("message", proto.CompactTextString(req)))
+	u.log.Debug("broadcasting", zap.Int("member_count", len(u.members)), zap.String("message", protojson.Format(req)))
 	u.RLock()
 	for _, rec := range u.members {
 		recipient := rec

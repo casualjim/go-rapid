@@ -12,11 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/freeport"
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/cornelk/hashmap"
-	"github.com/gogo/protobuf/proto"
 	"github.com/mattn/go-colorable"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

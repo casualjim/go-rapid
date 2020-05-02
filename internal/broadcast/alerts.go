@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/gogo/protobuf/proto"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Alerts to send batch updates
@@ -90,6 +90,6 @@ func (s *AlertBatcher) sendBatch(msgs []*remoting.AlertMessage) {
 		Sender:   s.addr,
 		Messages: msgs,
 	}
-	s.log.Debug("batched messages", zap.String("batch", proto.CompactTextString(req)))
+	s.log.Debug("batched messages", zap.String("batch", protojson.Format(req)))
 	s.bc.Broadcast(context.Background(), remoting.WrapRequest(req))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"google.golang.org/protobuf/encoding/protojson"
 	"reflect"
 	"sort"
 	"strings"
@@ -15,8 +16,6 @@ import (
 
 	"github.com/casualjim/go-rapid/api"
 	"go.uber.org/zap"
-
-	"github.com/gogo/protobuf/proto"
 
 	"github.com/OneOfOne/xxhash"
 
@@ -169,7 +168,7 @@ func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 
 	p.crnd = &remoting.Rank{Round: round, NodeIndex: int32(hash)}
 
-	p.log.Debug("Prepare called", zap.String("sender", addr), zap.String("round", proto.CompactTextString(p.crnd)))
+	p.log.Debug("Prepare called", zap.String("sender", addr), zap.String("round", protojson.Format(p.crnd)))
 	req := &remoting.Phase1AMessage{
 		ConfigurationId: int64(p.configurationID),
 		Sender:          p.myAddr,
@@ -177,7 +176,7 @@ func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 	}
 	p.lock.Unlock()
 
-	p.log.Debug("broadcasting phase 1a message", zap.String("msg", proto.CompactTextString(req)))
+	p.log.Debug("broadcasting phase 1a message", zap.String("msg", protojson.Format(req)))
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
@@ -208,16 +207,16 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 	if compareRanks(p.rnd, msg.GetRank()) < 0 {
 		p.rnd = msg.GetRank()
 	} else {
-		p.log.Debug("rejecting prepare message from lower rank", zap.String("round", proto.CompactTextString(p.rnd)), zap.String("msg", proto.CompactTextString(msg)))
+		p.log.Debug("rejecting prepare message from lower rank", zap.String("round", protojson.Format(p.rnd)), zap.String("msg", protojson.Format(msg)))
 		p.lock.Unlock()
 		return
 	}
 	p.lock.Unlock()
 	vvalstr := make([]string, len(p.vval))
 	for i := range p.vval {
-		vvalstr[i] = proto.CompactTextString(p.vval[i])
+		vvalstr[i] = protojson.Format(p.vval[i])
 	}
-	p.log.Debug("sending back", zap.String("vval", endpointsStr(p.vval)), zap.String("vrnd", proto.CompactTextString(p.vrnd)))
+	p.log.Debug("sending back", zap.String("vval", endpointsStr(p.vval)), zap.String("vrnd", protojson.Format(p.vrnd)))
 
 	req := &remoting.Phase1BMessage{
 		ConfigurationId: int64(p.configurationID),
@@ -246,7 +245,7 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 		return
 	}
 
-	p.log.Debug("handling phase1b message", zap.String("msg", proto.CompactTextString(msg)))
+	p.log.Debug("handling phase1b message", zap.String("msg", protojson.Format(msg)))
 
 	p.phase1bMessages = append(p.phase1bMessages, msg)
 	if len(p.phase1bMessages) <= (p.membershipSize / 2) {
@@ -289,7 +288,7 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	if msg.GetConfigurationId() != p.configurationID {
 		return
 	}
-	p.log.Debug("handling phase2a message", zap.String("msg", proto.CompactTextString(msg)))
+	p.log.Debug("handling phase2a message", zap.String("msg", protojson.Format(msg)))
 
 	// if compareRanks(p.rnd, msg.GetRnd()) > 0 || p.vrnd.Equal(msg.GetRnd()) {
 	if compareRanks(p.rnd, msg.GetRnd()) > 0 || rnkEquals(p.vrnd, msg.GetRnd()) {
@@ -301,7 +300,7 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	p.vrnd = msg.GetRnd()
 	p.vval = msg.GetVval()
 	p.lock.Unlock()
-	p.log.Debug("accepted value", zap.String("vval", endpointsStr(p.vval)), zap.String("vrnd", proto.CompactTextString(p.vrnd)))
+	p.log.Debug("accepted value", zap.String("vval", endpointsStr(p.vval)), zap.String("vrnd", protojson.Format(p.vrnd)))
 
 	req := &remoting.Phase2BMessage{
 		ConfigurationId: int64(p.configurationID),
@@ -318,7 +317,7 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 		return
 	}
 
-	p.log.Debug("handling phase2b message", zap.String("msg", proto.CompactTextString(msg)))
+	p.log.Debug("handling phase2b message", zap.String("msg", protojson.Format(msg)))
 
 	rnd := msg.GetRnd()
 	if rnd == nil {
@@ -330,7 +329,7 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 		decision := msg.GetEndpoints()
 		logArgs := []zap.Field{
 			zap.String("decision", endpointsStr(decision)),
-			zap.String("rnd", proto.CompactTextString(rnd)),
+			zap.String("rnd", protojson.Format(rnd)),
 			zap.Int("msgsInRound", msgsInRound),
 		}
 		p.log.Debug("decided on", logArgs...)
