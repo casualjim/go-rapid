@@ -8,7 +8,6 @@ require (
 	github.com/Workiva/go-datastructures v1.0.52
 	github.com/cornelk/hashmap v1.0.1
 	github.com/dchest/siphash v1.2.1 // indirect
-	github.com/gogo/protobuf v1.3.1 // indirect
 	github.com/golang/protobuf v1.4.0
 	github.com/google/uuid v1.1.1
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.0
@@ -17,10 +16,10 @@ require (
 	github.com/kpango/gache v1.2.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/libp2p/go-reuseport v0.0.1
-	github.com/mattn/go-colorable v0.1.6
 	github.com/nayuta87/queue v0.0.0-20180324125953-2a29819b7733
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
-	github.com/pkg/errors v0.9.1
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/rs/zerolog v1.18.0
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.5.1

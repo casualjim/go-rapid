@@ -2,14 +2,13 @@ package edgefailure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	"github.com/casualjim/go-rapid/api"
-	"go.uber.org/zap"
-
-	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/remoting"
 )
@@ -92,9 +91,9 @@ func (p *Scheduler) CancelAll() {
 	p.lock.Unlock()
 }
 
-func PingPong(log *zap.Logger, client api.Client) api.Detector {
+func PingPong(log zerolog.Logger, client api.Client) api.Detector {
 	return api.DetectorFunc(func(endpoint *remoting.Endpoint, callback api.EdgeFailureCallback) api.DetectorJob {
-		lg := log.With(zap.String("addr", fmt.Sprintf("%s:%d", endpoint.Hostname, endpoint.Port)))
+		lg := log.With().Str("addr", fmt.Sprintf("%s:%d", endpoint.Hostname, endpoint.Port)).Logger()
 		return &pingPongDetector{
 			log:       lg,
 			addr:      endpoint,
@@ -109,7 +108,7 @@ func PingPong(log *zap.Logger, client api.Client) api.Detector {
 
 // pingPongDetector uses ping pong messages to detect if edges are down
 type pingPongDetector struct {
-	log    *zap.Logger
+	log    zerolog.Logger
 	client api.Client
 
 	addr         *remoting.Endpoint
@@ -155,5 +154,5 @@ func (p *pingPongDetector) Detect(ctx context.Context) {
 
 func (p *pingPongDetector) handleFailure(subject *remoting.Endpoint, err error) {
 	p.failureCount++
-	p.log.Debug("ping pong probe failed", zap.Error(err))
+	p.log.Debug().Err(err).Msg("ping pong probe failed")
 }

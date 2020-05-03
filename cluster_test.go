@@ -18,11 +18,9 @@ import (
 	"github.com/casualjim/go-rapid/internal/freeport"
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/cornelk/hashmap"
-	"github.com/mattn/go-colorable"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func TestMain(m *testing.M) {
@@ -58,7 +56,7 @@ type testClusters struct {
 
 	options     []Option
 	addMetadata bool
-	log         *zap.Logger
+	log         zerolog.Logger
 }
 
 func mkAddr(port int) *remoting.Endpoint {
@@ -66,7 +64,7 @@ func mkAddr(port int) *remoting.Endpoint {
 }
 
 func (c *testClusters) CreateN(numNodes int, seedEndpoint *remoting.Endpoint) {
-	seed := c.BuildCluster(seedEndpoint, nil, WithLogger(c.log.Named("seed")))
+	seed := c.BuildCluster(seedEndpoint, nil, WithLogger(c.log.With().Str("logger", "seed").Logger()))
 	c.require.NoError(seed.Start())
 	c.instances.Set(c.key(seedEndpoint), seed)
 	c.require.Equal(1, seed.Size())
@@ -101,21 +99,21 @@ func (c *testClusters) ExtendClusterN(numNodes int, seedEndpoint *remoting.Endpo
 
 	for i := 0; i < numNodes; i++ {
 		wg.Add(1)
-		go func(idx int, log *zap.Logger) {
+		go func(idx int, log zerolog.Logger) {
 			defer wg.Done()
 
 			joiningEndpoint := mkAddr(freeport.MustNext())
 			nonSeed := c.BuildCluster(joiningEndpoint, seedEndpoint, WithLogger(log))
 			c.require.NoError(nonSeed.Start())
 			c.instances.Set(c.key(joiningEndpoint), nonSeed)
-		}(i, c.log.Named(fmt.Sprintf("joiner-%d", c.instances.Len())).With(zap.String("component", fmt.Sprintf("joiner-%d", i+1))))
+		}(i, c.log.With().Str("logger", fmt.Sprintf("joiner-%d", c.instances.Len())).Str("component", fmt.Sprintf("joiner-%d", i+1)).Logger())
 	}
 
 	wg.Wait()
 }
 
 func (c *testClusters) VerifyCluster(expectedSize int) {
-	c.log.Info("verifying cluster", zap.Int("size", expectedSize))
+	c.log.Info().Int("size", expectedSize).Msg("verifying cluster")
 	var any []*remoting.Endpoint
 	for v := range c.instances.Iter() {
 		cluster := v.Value.(*Cluster)
@@ -141,7 +139,7 @@ func (c *testClusters) verifyProposal(left, right []*remoting.Endpoint) {
 }
 
 func (c *testClusters) WaitAndVerifyAgreement(expectedSize, maxTries int, interval time.Duration) {
-	c.log.Info("waiting and verifying agreement", zap.Int("size", expectedSize))
+	c.log.Info().Int("size", expectedSize).Msg("waiting and verifying agreement")
 	var any []*remoting.Endpoint
 	for i := 0; i < maxTries; i++ {
 		ready := true
@@ -166,16 +164,8 @@ func (c *testClusters) WaitAndVerifyAgreement(expectedSize, maxTries int, interv
 	c.VerifyCluster(expectedSize)
 }
 
-func devLogger(t testing.TB) *zap.Logger {
-	enc := zap.NewDevelopmentEncoderConfig()
-	enc.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	l := zap.New(zapcore.NewCore(
-		zapcore.NewConsoleEncoder(enc),
-		zapcore.AddSync(colorable.NewColorableStdout()),
-		zapcore.DebugLevel,
-	))
-
-	return l
+func devLogger(t testing.TB) zerolog.Logger {
+	return zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr})
 }
 
 func TestCluster_SingleNodeJoinsThroughSeed(t *testing.T) {

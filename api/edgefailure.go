@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/casualjim/go-rapid/remoting"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
-type DetectorFactory func(*zap.Logger, Client) Detector
+type DetectorFactory func(zerolog.Logger, Client) Detector
 
 type EdgeFailureCallback func(*remoting.Endpoint)
 

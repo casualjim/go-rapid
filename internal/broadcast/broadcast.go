@@ -10,7 +10,7 @@ import (
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/remoting"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 )
 
 // Broadcaster interface different broadcasting mechanisms can implement
@@ -28,12 +28,12 @@ type Filter func(*remoting.Endpoint) bool
 func MatchAll(_ *remoting.Endpoint) bool { return true }
 
 // UnicastToAll broadcaster
-func UnicastToAll(log *zap.Logger, client api.Client) Broadcaster {
+func UnicastToAll(log zerolog.Logger, client api.Client) Broadcaster {
 	return Unicast(log, client, MatchAll)
 }
 
 // Unicast broadcaster
-func Unicast(log *zap.Logger, client api.Client, filter Filter) Broadcaster {
+func Unicast(log zerolog.Logger, client api.Client, filter Filter) Broadcaster {
 	//rx := make(chan bcMessage, 100)
 	if filter == nil {
 		filter = MatchAll
@@ -52,7 +52,7 @@ type unicastFiltered struct {
 	sync.RWMutex
 	members []*remoting.Endpoint
 	client  api.Client
-	log     *zap.Logger
+	log     zerolog.Logger
 	rand    *rand.Rand
 }
 
@@ -114,7 +114,7 @@ func (u *unicastFiltered) Broadcast(ctx context.Context, req *remoting.RapidRequ
 	sendMsg := func(ctx context.Context, recipient *remoting.Endpoint, req *remoting.RapidRequest) {
 		resp, err := u.client.DoBestEffort(ctx, recipient, req)
 		if err != nil {
-			u.log.Warn("failed to broadcast", zap.String("recipient", recipient.String()), zap.Error(err))
+			u.log.Warn().Err(err).Str("recipient", recipient.String()).Msg("failed to broadcast")
 			if cval != nil {
 				sink <- Result{Err: err}
 			}
@@ -127,7 +127,7 @@ func (u *unicastFiltered) Broadcast(ctx context.Context, req *remoting.RapidRequ
 		}
 	}
 
-	u.log.Debug("broadcasting", zap.Int("member_count", len(u.members)), zap.String("message", protojson.Format(req)))
+	u.log.Debug().Int("member_count", len(u.members)).Str("message", protojson.Format(req)).Msg("broadcasting")
 	u.RLock()
 	for _, rec := range u.members {
 		recipient := rec
@@ -164,100 +164,3 @@ func (u *unicastFiltered) SetMembership(recipients []*remoting.Endpoint) {
 
 func (u *unicastFiltered) Start() {}
 func (u *unicastFiltered) Stop()  {}
-
-//
-//type bcMessage interface {
-//	bcMsg()
-//}
-//
-//type setMembership struct {
-//	nodes []*remoting.Endpoint
-//}
-//
-//type getMembers struct {
-//	reply chan []*remoting.Endpoint
-//}
-//
-//type sendBroadcast struct {
-//	Ctx context.Context
-//	Req *remoting.RapidRequest
-//}
-//
-//func (sendBroadcast) bcMsg() {}
-//func (setMembership) bcMsg() {}
-//func (getMembers) bcMsg()    {}
-//
-//type channelBroadcaster struct {
-//	rx     chan bcMessage
-//	wg     sync.WaitGroup
-//	closed uint32
-//
-//	client api.Client
-//	log    *zap.Logger
-//	filter Filter
-//}
-//
-//func (c *channelBroadcaster) Broadcast(ctx context.Context, req *remoting.RapidRequest) {
-//	if c.closed != 0 {
-//		return
-//	}
-//	c.rx <- sendBroadcast{Ctx: ctx, Req: req}
-//}
-//
-//func (c *channelBroadcaster) SetMembership(nodes []*remoting.Endpoint) {
-//	if c.closed != 0 {
-//		return
-//	}
-//	c.rx <- setMembership{nodes}
-//}
-//
-//func (c *channelBroadcaster) getMembers() []*remoting.Endpoint {
-//	if c.closed != 0 {
-//		return nil
-//	}
-//	reply := make(chan []*remoting.Endpoint)
-//	c.rx <- getMembers{reply}
-//	return <-reply
-//}
-//
-//func (c *channelBroadcaster) Start() {
-//	if !atomic.CompareAndSwapUint32(&c.closed, 1, 0) {
-//		return
-//	}
-//	c.wg.Add(1)
-//	// latch is used to wait for goroutine to be scheduled before moving on
-//	latch := make(chan struct{})
-//
-//	go func(client api.Client, log *zap.Logger, filter Filter) {
-//		defer c.wg.Done()
-//		close(latch)
-//
-//		bc := &unicastFiltered{
-//			Filter: filter,
-//			client: client,
-//			log:    log,
-//			rand:   rand.New(rand.NewSource(time.Now().UnixNano())),
-//		}
-//
-//		for msg := range c.rx {
-//			switch req := msg.(type) {
-//			case sendBroadcast:
-//				bc.Broadcast(req.Ctx, req.Req)
-//			case setMembership:
-//				bc.SetMembership(req.nodes)
-//			case getMembers:
-//				req.reply <- bc.members
-//				close(req.reply)
-//			}
-//		}
-//	}(c.client, c.log, c.filter)
-//
-//	<-latch
-//}
-//
-//func (c *channelBroadcaster) Stop() {
-//	if atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
-//		close(c.rx)
-//		c.wg.Wait()
-//	}
-//}

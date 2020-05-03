@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 func TestRegisterHandlers(t *testing.T) {
 	t.Parallel()
 
-	bus := New(zap.NewNop())
+	bus := New(zerolog.Nop())
 	defer bus.Close()
 	assert.Equal(t, 0, bus.Len())
 	bus.Subscribe(NOOPHandler)
@@ -23,7 +23,7 @@ func TestRegisterHandlers(t *testing.T) {
 func TestUnregisterHandlers(t *testing.T) {
 	t.Parallel()
 
-	bus := New(zap.NewNop())
+	bus := New(zerolog.Nop())
 	defer bus.Close()
 
 	assert.Equal(t, 0, bus.Len())
@@ -36,7 +36,7 @@ func TestUnregisterHandlers(t *testing.T) {
 func TestPublish_NoListeners(t *testing.T) {
 	t.Parallel()
 
-	log := zap.NewNop()
+	log := zerolog.Nop()
 	bus := New(log)
 	defer bus.Close()
 
@@ -45,7 +45,7 @@ func TestPublish_NoListeners(t *testing.T) {
 	<-time.After(15 * time.Millisecond)
 	evts := make(chan Event, 3)
 	listener1 := Handler(func(evt Event) error {
-		log.Info("listener 1", zap.Object("event", evt))
+		log.Info().Object("event", evt).Msg("listener 1")
 		evts <- evt
 		return nil
 	})
@@ -59,7 +59,7 @@ func TestPublish_NoListeners(t *testing.T) {
 func TestPublish_ToAllListeners(t *testing.T) {
 	t.Parallel()
 
-	log := zap.NewNop()
+	log := zerolog.Nop()
 	bus := New(log)
 	defer bus.Close()
 
@@ -67,19 +67,19 @@ func TestPublish_ToAllListeners(t *testing.T) {
 	wg := new(sync.WaitGroup)
 	wg.Add(3)
 	listener1 := Handler(func(evt Event) error {
-		log.Info("listener 1", zap.Object("event", evt))
+		log.Info().Object("event", evt).Msg("listener 1")
 		evts <- evt
 		wg.Done()
 		return nil
 	})
 	listener2 := Handler(func(evt Event) error {
-		log.Info("listener 2", zap.Object("event", evt))
+		log.Info().Object("event", evt).Msg("listener 2")
 		evts <- evt
 		wg.Done()
 		return nil
 	})
 	listener3 := Handler(func(evt Event) error {
-		log.Info("listener 3", zap.Object("event", evt))
+		log.Info().Object("event", evt).Msg("listener 3")
 		evts <- evt
 		wg.Done()
 		return nil
@@ -116,7 +116,7 @@ func TestSubscribeFilter(t *testing.T) {
 
 	filtered := Filtered(matchTriggered, handler)
 
-	bus := New(zap.NewNop())
+	bus := New(zerolog.Nop())
 	defer bus.Close()
 
 	bus.Subscribe(filtered)

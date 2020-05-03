@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/remoting"
-	"go.uber.org/zap"
 )
 
 // NewMultiNodeCutDetector with the specified initialization values
-func NewMultiNodeCutDetector(log *zap.Logger, k, h, l int) *MultiNodeCutDetector {
+func NewMultiNodeCutDetector(log zerolog.Logger, k, h, l int) *MultiNodeCutDetector {
 	return &MultiNodeCutDetector{
 		k:              k,
 		h:              h,
@@ -37,7 +37,7 @@ type MultiNodeCutDetector struct {
 	preProposal       map[uint64]*remoting.Endpoint
 	seenLinkDown      bool
 	lock              sync.RWMutex
-	log               *zap.Logger
+	log               zerolog.Logger
 }
 
 // KnownProposals for this buffer
@@ -81,7 +81,7 @@ func (b *MultiNodeCutDetector) AggregateForProposal(msg *remoting.AlertMessage) 
 
 	var proposals []*remoting.Endpoint
 	for _, rn := range msg.GetRingNumber() {
-		b.log.Debug("aggregating proposal for ring", zap.Int32("ring", rn))
+		b.log.Debug().Int32("ring", rn).Msg("aggregating proposal for ring")
 		proposals = append(proposals, b.aggregateForProposal(msg, rn)...)
 	}
 	return proposals, nil
@@ -89,7 +89,7 @@ func (b *MultiNodeCutDetector) AggregateForProposal(msg *remoting.AlertMessage) 
 
 func (b *MultiNodeCutDetector) aggregateForProposal(msg *remoting.AlertMessage, ringNumber int32) []*remoting.Endpoint {
 	if msg.EdgeStatus == remoting.EdgeStatus_DOWN {
-		b.log.Debug("seen link down event")
+		b.log.Debug().Msg("seen link down event")
 		b.seenLinkDown = true
 	}
 
@@ -104,19 +104,25 @@ func (b *MultiNodeCutDetector) aggregateForProposal(msg *remoting.AlertMessage, 
 	}
 
 	if _, hasRing := reportsForHost[ringNumber]; hasRing { // duplicate announcement, ignore.
-		b.log.Debug("stopping aggregation, because already seen this announcement")
+		b.log.Debug().Msg("stopping aggregation, because already seen this announcement")
 		return nil
 	}
 
 	reportsForHost[ringNumber] = msg.EdgeSrc
-	b.log.Debug("calculating aggregate", zap.Int("num_reports", len(reportsForHost)), zap.String("src", epStr(msg.EdgeSrc)), zap.String("dst", epStr(msg.EdgeDst)), zap.Int32("ring", ringNumber), zap.Reflect("state", b.reportsPerHost))
+	b.log.Debug().
+		Int("num_reports", len(reportsForHost)).
+		Str("src", epStr(msg.EdgeSrc)).
+		Str("dst", epStr(msg.EdgeDst)).
+		Int32("ring", ringNumber).
+		Interface("state", b.reportsPerHost).
+		Msg("calculating aggregate")
 	return b.calculateAggregate(len(reportsForHost), edgeDst, msg.EdgeDst)
 }
 
 func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey uint64, lnkDst *remoting.Endpoint) []*remoting.Endpoint {
 
 	if numReportsForHost == b.l {
-		b.log.Debug("we're at the low watermark", zap.Int("num_reports_for_host", numReportsForHost))
+		b.log.Debug().Int("num_reports_for_host", numReportsForHost).Msg("we're at the low watermark")
 		b.updatesInProgress++
 		b.preProposal[dstKey] = lnkDst
 	}
@@ -133,7 +139,7 @@ func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey 
 			ret := make([]*remoting.Endpoint, len(b.proposals))
 			copy(ret, b.proposals)
 			b.proposals = nil
-			b.log.Debug("returning results because there are no more updates in progress", zap.Int("results", len(ret)))
+			b.log.Debug().Int("results", len(ret)).Msg("returning results because there are no more updates in progress")
 			return ret
 		}
 	}
@@ -148,17 +154,17 @@ func (b *MultiNodeCutDetector) InvalidateFailingLinks(view *View) ([]*remoting.E
 	defer b.lock.Unlock()
 
 	if !b.seenLinkDown {
-		b.log.Debug("no invalid links seen, returning")
+		b.log.Debug().Msg("no invalid links seen, returning")
 		return nil, nil
 	}
 
 	var proposalsToReturn []*remoting.Endpoint
 	for _, nodeInFlux := range b.preProposal {
-		b.log.Debug("checking node in flux", zap.String("node", epStr(nodeInFlux)))
+		b.log.Debug().Str("node", epStr(nodeInFlux)).Msg("checking node in flux")
 		var ringNumber int32
 		for _, obs := range view.KnownOrExpectedObserversFor(nodeInFlux) {
 			observer := obs // pin
-			b.log.Debug("checking proposal for observer", zap.String("observer", epStr(observer)))
+			b.log.Debug().Str("observer", epStr(observer)).Msg("checking proposal for observer")
 			if hasProposal(b.proposals, observer) || hasPreproposal(b.preProposal, observer) {
 				msg := &remoting.AlertMessage{
 					EdgeSrc:    observer,

@@ -2,17 +2,16 @@ package rapid
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/transport"
 	"github.com/casualjim/go-rapid/remoting"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"golang.org/x/sync/errgroup"
-
-	"github.com/pkg/errors"
 
 	"github.com/casualjim/go-rapid/internal/broadcast"
 
@@ -36,7 +35,7 @@ func New(addr api.Node, options ...Option) (*Cluster, error) {
 		k:                           K,
 		l:                           L,
 		h:                           H,
-		log:                         zap.NewNop(),
+		log:                         zerolog.Nop(),
 		transportSettings:           &ts,
 		edgeFailureDetector:         edgefailure.PingPong,
 		edgeFailureDetectorInterval: membership.DefaultFailureDetectorInterval,
@@ -82,7 +81,7 @@ func WithSeedNodes(addrs ...*remoting.Endpoint) Option {
 	}
 }
 
-func WithLogger(log *zap.Logger) Option {
+func WithLogger(log zerolog.Logger) Option {
 	return func(c *Cluster) {
 		c.log = log
 	}
@@ -148,7 +147,7 @@ type Cluster struct {
 	h uint32
 	l uint32
 
-	log                         *zap.Logger
+	log                         zerolog.Logger
 	members                     *membership.Service
 	server                      *transport.Server
 	client                      *transport.Client
@@ -307,18 +306,18 @@ func (c *Cluster) join(endpoint *remoting.Endpoint) error {
 			sender := etp.Resp.Sender
 			switch sc := etp.Resp.StatusCode; sc {
 			case remoting.JoinStatusCode_CONFIG_CHANGED:
-				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
+				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 			case remoting.JoinStatusCode_UUID_ALREADY_IN_RING:
-				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
+				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 				currentID = api.NewNodeId()
 			case remoting.JoinStatusCode_MEMBERSHIP_REJECTED:
-				c.log.Info("retrying", zap.String("sender", epstr(sender)), zap.Stringer("code", sc))
+				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 			default:
-				return errors.Errorf("cluster join: unrecognized status code: %s", etp.Resp.StatusCode.String())
+				return fmt.Errorf("cluster join: unrecognized status code: %s", etp.Resp.StatusCode.String())
 			}
 
 		default:
-			c.log.Info("join message to seed failed", zap.Error(err), zap.String("seed", epstr(endpoint)))
+			c.log.Err(err).Str("seed", epstr(endpoint)).Msg("join message to seed failed")
 		}
 	}
 
@@ -360,12 +359,7 @@ func (c *Cluster) joinAttempt(endpoint *remoting.Endpoint, currentID *remoting.N
 	if jr.GetStatusCode() == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		configToJoin = -1
 	}
-	c.log.Debug(
-		"trying to join",
-		zap.Stringer("joiner", c.me),
-		zap.Int64("Config", configToJoin),
-		zap.Int("attempt", attempt),
-	)
+	c.log.Debug().Str("joiner", c.me.String()).Int64("config", configToJoin).Int("attempt", attempt).Msg("trying to join")
 
 	/*
 	 * Phase one complete. Now send a phase two message to all our observers, and if there is a valid

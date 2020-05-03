@@ -4,12 +4,15 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	golog "log"
+	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/mattn/go-colorable"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/broadcast"
@@ -19,8 +22,6 @@ import (
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"google.golang.org/grpc"
 )
 
@@ -43,20 +44,15 @@ type messagingSuite struct {
 	services   []*Service
 	ctx        context.Context
 	cancel     context.CancelFunc
-	log        *zap.Logger
+	log        zerolog.Logger
 	// bufc       *bufconn.Listener
 }
 
 func (m *messagingSuite) SetupSuite() {
-	enc := zap.NewDevelopmentEncoderConfig()
-	enc.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	l := zap.New(zapcore.NewCore(
-		zapcore.NewConsoleEncoder(enc),
-		zapcore.AddSync(colorable.NewColorableStdout()),
-		zapcore.DebugLevel,
-	))
-	zap.ReplaceGlobals(l)
+	l := zerolog.New(zerolog.NewConsoleWriter(func(w *zerolog.ConsoleWriter) { w.Out = os.Stderr }))
+	golog.SetOutput(l)
 	m.log = l
+	log.Logger = l
 }
 
 func (m *messagingSuite) SetupTest() {
@@ -179,25 +175,6 @@ func newaddr(port int) *remoting.Endpoint {
 	return endpoint("127.0.0.1", port)
 }
 
-func TestJoinMultipleNodes_CheckRace(t *testing.T) {
-	const (
-		k        = 10
-		l        = 2
-		h        = 8
-		numNodes = 10
-	)
-
-	enc := zap.NewDevelopmentEncoderConfig()
-	enc.EncodeLevel = zapcore.CapitalColorLevelEncoder
-	lg := zap.New(zapcore.NewCore(
-		zapcore.NewConsoleEncoder(enc),
-		zapcore.AddSync(colorable.NewColorableStdout()),
-		zapcore.DebugLevel,
-	))
-	zap.ReplaceGlobals(lg)
-
-}
-
 func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	const numNodes = 10
 	// ports := freeport.MustNextN(numNodes)
@@ -233,7 +210,7 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	}
 
 	// Try #1: successfully join here.
-	ctx, group1 := newJoinResponseGroups(nil, m.ctx, len(ringNumbersPerObserver))
+	ctx, group1 := newJoinResponseGroups(zerolog.Nop(), m.ctx, len(ringNumbersPerObserver))
 	for k, rings := range ringNumbersPerObserver {
 		k, rings := k, rings // pin
 		group1.Call(func() (*remoting.RapidResponse, error) {
@@ -253,7 +230,7 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	}
 
 	// Try #2. Should get back the full Configuration from all nodes.
-	ctx, group2 := newJoinResponseGroups(m.log.Named("join_reponse_group2"), m.ctx, len(ringNumbersPerObserver))
+	ctx, group2 := newJoinResponseGroups(m.log.With().Str("logger", "join_reponse_group2").Logger(), m.ctx, len(ringNumbersPerObserver))
 	for k, rings := range ringNumbersPerObserver {
 		k, rings := k, rings // pin
 		group2.Call(func() (*remoting.RapidResponse, error) {
@@ -396,7 +373,7 @@ func (m *messagingSuite) TestBroadcasting() {
 	}
 
 	_, client := m.makeClient("client", freeport.MustNext())
-	bc := broadcast.UnicastToAll(zap.NewNop(), client)
+	bc := broadcast.UnicastToAll(zerolog.Nop(), client)
 	bc.SetMembership(epList)
 	bc.Start()
 	defer bc.Stop()
@@ -422,7 +399,7 @@ func (m *messagingSuite) makeClient(name string, port int) (*remoting.Endpoint, 
 	addr := newaddr(port)
 	opts := transport.DefaultSettings(api.NewNode(addr, nil))
 	// opts.GRPCRetries = 1
-	opts.Log = /* m.log.Named(name) */ zap.NewNop()
+	opts.Log = /* m.log.With().Str("logger", name) */ zerolog.Nop()
 	//bufd := grpc.WithContextDialer(func(i context.Context, s string) (conn net.Conn, e error) {
 	//	return m.bufc.Dial()
 	//})
@@ -431,14 +408,14 @@ func (m *messagingSuite) makeClient(name string, port int) (*remoting.Endpoint, 
 
 func (m *messagingSuite) createAndStartMembershipService(name string, addr *remoting.Endpoint, view *View) {
 	node := api.NewNode(addr, nil)
-	log := m.log.Named(name)
-	// log := zap.NewNop()
-	log.Info("adding server", zap.Stringer("endpoint", addr))
+	log := m.log.With().Str("logger", name).Logger()
+	// log := zerolog.Nop()
+	log.Info().Str("endpoint", addr.String()).Msg("adding server")
 
 	trSettings := transport.DefaultServerSettings(node)
 	//trSettings, bufc := transport.DefaultServerSettings(node).InMemoryTransport(4096*1024)
-	// trSettings.Log = log.Named("transport")
-	trSettings.Log = zap.NewNop()
+	// trSettings.Log = log.With().Str("logger", "transport")
+	trSettings.Log = zerolog.Nop()
 
 	//m.bufc = bufc
 	//bufd := grpc.WithContextDialer(func(i context.Context, s string) (conn net.Conn, e error) {
@@ -460,13 +437,13 @@ func (m *messagingSuite) createAndStartMembershipService(name string, addr *remo
 		view = NewView(m.k, nil, nil)
 		m.Require().NoError(view.RingAdd(addr, api.NewNodeId()))
 	}
-	mlog := log.Named("membership")
+	mlog := log.With().Str("logger", "membership").Logger()
 	svc := New(
 		node,
-		NewMultiNodeCutDetector(mlog.Named("cut_detection"), m.k, m.h, m.l),
+		NewMultiNodeCutDetector(mlog.With().Str("logger", "cut_detection").Logger(), m.k, m.h, m.l),
 		view,
-		broadcast.UnicastToAll(log.Named("broadcast"), client),
-		edgefailure.PingPong(log.Named("edge_failure"), client),
+		broadcast.UnicastToAll(log.With().Str("logger", "broadcast").Logger(), client),
+		edgefailure.PingPong(log.With().Str("logger", "edge_failure").Logger(), client),
 		0,
 		client,
 		log,
@@ -481,7 +458,7 @@ func (m *messagingSuite) createAndStartMembershipService(name string, addr *remo
 
 	m.servers = append(m.servers, server)
 	m.services = append(m.services, svc)
-	log.Info("added server", zap.Stringer("endpoint", addr))
+	log.Info().Str("endpoint", addr.String()).Msg("added server")
 }
 
 func (m *messagingSuite) sendPreJoinMessage(client api.Client, serverAddr, clientAddr *remoting.Endpoint, nodeID *remoting.NodeId) (*remoting.JoinResponse, error) {
@@ -496,10 +473,7 @@ func (m *messagingSuite) sendPreJoinMessage(client api.Client, serverAddr, clien
 	return resp.GetJoinResponse(), nil
 }
 
-func newJoinResponseGroups(log *zap.Logger, ctx context.Context, size int) (context.Context, *joinResponseGroup) {
-	if log == nil {
-		log = zap.NewNop()
-	}
+func newJoinResponseGroups(log zerolog.Logger, ctx context.Context, size int) (context.Context, *joinResponseGroup) {
 	nctx, cancel := context.WithCancel(ctx)
 	return nctx, &joinResponseGroup{
 		result: make(chan *remoting.JoinResponse, size),
@@ -509,7 +483,7 @@ func newJoinResponseGroups(log *zap.Logger, ctx context.Context, size int) (cont
 }
 
 type joinResponseGroup struct {
-	log    *zap.Logger
+	log    zerolog.Logger
 	wg     sync.WaitGroup
 	result chan *remoting.JoinResponse
 	cancel context.CancelFunc
@@ -524,11 +498,11 @@ func (a *joinResponseGroup) Call(call func() (*remoting.RapidResponse, error)) {
 			resp, err := call()
 			if err == nil && resp.GetJoinResponse() != nil {
 				a.result <- resp.GetJoinResponse()
-				a.log.Info("collecting response result", zap.Stringer("resp", resp.GetJoinResponse().GetStatusCode()))
+				a.log.Info().Str("resp", resp.GetJoinResponse().GetStatusCode().String()).Msg("collecting response result")
 				return
 			}
 			if err != nil {
-				a.log.Error("join response group", zap.Error(err))
+				a.log.Err(err).Msg("join response group")
 				return
 			}
 			// <-time.After(time.Second)

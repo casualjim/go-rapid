@@ -5,9 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/casualjim/go-rapid/remoting"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
 )
 
@@ -22,7 +21,7 @@ func TestAlerter_StartStop(t *testing.T) {
 		ch: make(chan *remoting.BatchedAlertMessage, 10),
 	}
 	addr := endpoint("127.0.0.1", 1946)
-	alerter := Alerts(zap.NewNop(), addr, bc, 10*time.Millisecond, 3)
+	alerter := Alerts(zerolog.Nop(), addr, bc, 10*time.Millisecond, 3)
 	alerter.Enqueue(&remoting.AlertMessage{})
 	alerter.Enqueue(&remoting.AlertMessage{})
 	alerter.Enqueue(&remoting.AlertMessage{})

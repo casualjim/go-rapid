@@ -5,12 +5,12 @@ import (
 	"time"
 
 	"github.com/casualjim/go-rapid/remoting"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Alerts to send batch updates
-func Alerts(log *zap.Logger, addr *remoting.Endpoint, bc Broadcaster, interval time.Duration, maxSize int) *AlertBatcher {
+func Alerts(log zerolog.Logger, addr *remoting.Endpoint, bc Broadcaster, interval time.Duration, maxSize int) *AlertBatcher {
 	stopSignal := make(chan chan struct{})
 	queue := make(chan *remoting.AlertMessage, 500)
 
@@ -29,7 +29,7 @@ func Alerts(log *zap.Logger, addr *remoting.Endpoint, bc Broadcaster, interval t
 
 // AlertBatcher allow for stopping a broadcast batch loop or enqueueing messages to it
 type AlertBatcher struct {
-	log      *zap.Logger
+	log      zerolog.Logger
 	addr     *remoting.Endpoint
 	bc       Broadcaster
 	interval time.Duration
@@ -85,11 +85,11 @@ func (s *AlertBatcher) sendBatch(msgs []*remoting.AlertMessage) {
 		return
 	}
 
-	s.log.Info("sending alert batch", zap.Int("size", len(msgs)))
+	s.log.Info().Int("size", len(msgs)).Msg("sending alert batch")
 	req := &remoting.BatchedAlertMessage{
 		Sender:   s.addr,
 		Messages: msgs,
 	}
-	s.log.Debug("batched messages", zap.String("batch", protojson.Format(req)))
+	s.log.Debug().Str("batch", protojson.Format(req)).Msg("batched messages")
 	s.bc.Broadcast(context.Background(), remoting.WrapRequest(req))
 }

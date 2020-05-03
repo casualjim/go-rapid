@@ -13,11 +13,11 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/nayuta87/queue"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 
 	"github.com/casualjim/go-rapid/node"
-	"go.uber.org/zap"
 
 	"github.com/casualjim/go-rapid/internal/edgefailure"
 
@@ -51,7 +51,7 @@ func New(
 	failureDetector api.Detector,
 	failureDetectorInterval time.Duration,
 	client api.Client,
-	log *zap.Logger,
+	log zerolog.Logger,
 	subscriptions *EventSubscriptions,
 ) *Service {
 
@@ -71,7 +71,7 @@ func New(
 
 // Service that implements the rapid membership protocol
 type Service struct {
-	log               *zap.Logger
+	log               zerolog.Logger
 	view              *View
 	announcedProposal *atomicBool
 	me                api.Node
@@ -124,8 +124,8 @@ func (s *Service) AddSubscription(evt api.ClusterEvent, sub api.Subscriber) {
 }
 
 func (s *Service) Init() error {
-	s.log = s.log.Named("membership").With(zap.Stringer("addr", s.me))
-	s.log.Debug("initializing membership service")
+	s.log = s.log.With().Str("component", "membership").Str("addr", s.me.String()).Logger()
+	s.log.Debug().Msg("initializing membership service")
 
 	s.metadata = node.NewMetadataRegistry()
 	_, _ = s.metadata.Add(s.me.Addr, s.me.Meta())
@@ -153,7 +153,7 @@ func (s *Service) Init() error {
 }
 
 func (s *Service) Start() error {
-	s.log.Debug("starting membership service")
+	s.log.Debug().Msg("starting membership service")
 	s.broadcaster.Start()
 	s.alertBatcher.Start()
 
@@ -177,9 +177,9 @@ func (s *Service) Start() error {
 		return err
 	}
 
-	s.log.Debug("start: notifying of initial view change")
+	s.log.Debug().Msg("start: notifying of initial view change")
 	s.notifyOfInitialViewChange()
-	s.log.Info("membership service started")
+	s.log.Info().Msg("membership service started")
 	return nil
 }
 
@@ -187,11 +187,11 @@ func (s *Service) Stop() {
 	s.edgeFailures.CancelAll()
 	s.alertBatcher.Stop()
 	s.broadcaster.Stop()
-	s.log.Info("membership service stopped")
+	s.log.Info().Msg("membership service stopped")
 }
 
 func (s *Service) notifyOfInitialViewChange() {
-	s.log.Debug("notifying of initial view change")
+	s.log.Debug().Msg("notifying of initial view change")
 	ccid := s.view.ConfigurationID()
 	statusChanges := s.getInitialViewChange()
 	s.subscriptions.Trigger(api.ClusterEventViewChange, ccid, statusChanges)
@@ -210,7 +210,7 @@ func (s *Service) getInitialViewChange() []api.StatusChange {
 }
 
 func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
-	s.log.Debug("on decide view change", zap.Int("count", len(proposal)))
+	s.log.Debug().Int("count", len(proposal)).Msg("on decide view change")
 	s.edgeFailures.CancelAll()
 
 	statusChanges := make([]api.StatusChange, 0, len(proposal))
@@ -289,7 +289,7 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 			return err
 		}
 	} else {
-		s.log.Debug("Got kicked out and is shutting down")
+		s.log.Debug().Msg("Got kicked out and is shutting down")
 		s.subscriptions.Trigger(api.ClusterEventKicked, ccid, statusChanges)
 	}
 
@@ -297,7 +297,7 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 }
 
 func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
-	s.log.Debug("creating failure detectors for the current Configuration", zap.Int64("config", s.view.ConfigurationID()))
+	s.log.Debug().Int64("config", s.view.ConfigurationID()).Msg("creating failure detectors for the current Configuration")
 	subjects, err := s.view.SubjectsOf(s.me.Addr)
 	if err != nil {
 		return err
@@ -335,21 +335,20 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 	return func(endpoint *remoting.Endpoint) {
 		cid := s.view.ConfigurationID()
 		if configID != cid {
-			s.log.Debug(
-				"Ignoring failure notification from old Configuration",
-				zap.String("subject", epStr(endpoint)),
-				zap.Int64("old_config", configID),
-				zap.Int64("config", cid))
+			s.log.Debug().
+				Str("subject", epStr(endpoint)).
+				Int64("old_config", configID).
+				Int64("config", cid).
+				Msg("Ignoring failure notification from old Configuration")
 			return
 		}
 
-		if s.log.Core().Enabled(zap.DebugLevel) {
-			s.log.Debug(
-				"Announcing EdgeFail event",
-				zap.String("subject", epStr(endpoint)),
-				zap.Int64("config", cid),
-				zap.Int("size", s.view.Size()),
-			)
+		if s.log.Debug().Enabled() {
+			s.log.Debug().
+				Str("subject", epStr(endpoint)).
+				Int64("config", cid).
+				Int("size", s.view.Size()).
+				Msg("Announcing EdgeFail event")
 		}
 
 		// Note: setUuid is deliberately missing here because it does not affect leaves.
@@ -386,9 +385,9 @@ func (s *Service) Handle(ctx context.Context, req *remoting.RapidRequest) (*remo
 }
 
 func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoinMessage) (*remoting.RapidResponse, error) {
-	s.log.Debug("handling PreJoinMessage", zap.String("sender", epStr(req.GetSender())), zap.Stringer("node_id", req.GetNodeId()))
+	s.log.Debug().Str("sender", epStr(req.GetSender())).Str("node_id", req.GetNodeId().String()).Msg("handling PreJoinMessage")
 	statusCode := s.view.IsSafeToJoin(req.GetSender(), req.GetNodeId())
-	s.log.Debug("got safe to join", zap.Stringer("status_code", statusCode))
+	s.log.Debug().Str("status_code", statusCode.String()).Msg("got safe to join")
 
 	var endpoints []*remoting.Endpoint
 	if statusCode == remoting.JoinStatusCode_SAFE_TO_JOIN || statusCode == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
@@ -396,7 +395,7 @@ func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoi
 		endpoints = append(endpoints, observers...)
 	}
 
-	s.log.Debug("collected the observers", zap.Stringer("status_code", statusCode), zap.Int("observers", len(endpoints)))
+	s.log.Debug().Str("status_code", statusCode.String()).Int("observers", len(endpoints)).Msg("collected the observers")
 	return remoting.WrapResponse(&remoting.JoinResponse{
 		Sender:          s.me.Addr,
 		ConfigurationId: int64(s.view.ConfigurationID()),
@@ -408,12 +407,11 @@ func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoi
 func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessage) (*remoting.RapidResponse, error) {
 	ccid := s.view.ConfigurationID()
 	if ccid == req.GetConfigurationId() {
-		s.log.Debug(
-			"enqueueing SAFE_TO_JOIN",
-			zap.String("sender", epStr(req.GetSender())),
-			zap.Int64("config", ccid),
-			zap.Int("size", s.view.Size()),
-		)
+		s.log.Debug().
+			Str("sender", epStr(req.GetSender())).
+			Int64("config", ccid).
+			Int("size", s.view.Size()).
+			Msg("enqueueing SAFE_TO_JOIN")
 
 		fut := make(chan *remoting.RapidResponse)
 		s.joinersToRespond.GetOrAdd(req.GetSender(), fut)
@@ -436,14 +434,13 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		}
 	}
 
-	s.log.Info(
-		"Wrong configuration",
-		zap.String("sender", epStr(req.GetSender())),
-		zap.Int64("config", ccid),
-		zap.Int64("proposed", req.GetConfigurationId()),
-		zap.Int("size", s.view.Size()),
-		zap.Reflect("view", s.view.GetRing(0)),
-	)
+	s.log.Info().
+		Str("sender", epStr(req.GetSender())).
+		Int64("config", ccid).
+		Int64("proposed", req.GetConfigurationId()).
+		Int("size", s.view.Size()).
+		Interface("view", s.view.GetRing(0)).
+		Msg("Wrong configuration")
 	config := s.view.Configuration()
 
 	resp := &remoting.JoinResponse{
@@ -453,34 +450,33 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 	}
 
 	if s.view.IsHostPresent(req.GetSender()) && s.view.IsIdentifierPresent(req.GetNodeId()) {
-		s.log.Info(
-			"Joining host that's already present",
-			zap.String("sender", epStr(req.GetSender())),
-			zap.Int64("current_config", ccid),
-			zap.Int64("config", config.ConfigID),
-			zap.Int64("proposed", req.GetConfigurationId()),
-			zap.Int("size", s.view.Size()),
-		)
+		s.log.Info().
+			Str("sender", epStr(req.GetSender())).
+			Int64("current_config", ccid).
+			Int64("config", config.ConfigID).
+			Int64("proposed", req.GetConfigurationId()).
+			Int("size", s.view.Size()).
+			Msg("Joining host that's already present")
+
 		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
 		resp.Endpoints = config.Nodes
 		resp.Identifiers = config.Identifiers
 	} else {
-		s.log.Info(
-			"returning CONFIG_CHANGED",
-			zap.String("sender", epStr(req.GetSender())),
-			zap.Int64("current_config", ccid),
-			zap.Int64("config", config.ConfigID),
-			zap.Int("size", s.view.Size()),
-		)
+		s.log.Info().
+			Str("sender", epStr(req.GetSender())).
+			Int64("current_config", ccid).
+			Int64("config", config.ConfigID).
+			Int("size", s.view.Size()).
+			Msg("returning CONFIG_CHANGED")
 	}
 
 	return remoting.WrapResponse(resp), nil
 }
 
 func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.BatchedAlertMessage) (*remoting.RapidResponse, error) {
-	s.log.Debug("handling batched alert message", zap.String("batch", protojson.Format(req)))
+	s.log.Debug().Str("batch", protojson.Format(req)).Msg("handling batched alert message")
 	if s.announcedProposal.Value() {
-		s.log.Debug("replying with default response, because already announced")
+		s.log.Debug().Msg("replying with default response, because already announced")
 		return defaultResponse, nil
 	}
 
@@ -489,7 +485,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	endpoints := &endpointSet{
 		data: make(map[uint64]*remoting.Endpoint),
 	}
-	s.log.Debug("preparing proposal for join")
+	s.log.Debug().Msg("preparing proposal for join")
 	for _, msg := range req.GetMessages() {
 		if !s.filterAlertMessage(req, msg, memSize, ccid) {
 			continue
@@ -512,7 +508,7 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 		endpoints.AddAll(proposal)
 	}
 
-	s.log.Debug("invalidating failing links in the view", zap.String("endpoints", epStr(endpoints.Values()...)))
+	s.log.Debug().Str("endpoints", epStr(endpoints.Values()...)).Msg("invalidating failing links in the view")
 	failing, err := s.cutDetector.InvalidateFailingLinks(s.view)
 	if err != nil {
 		return nil, err
@@ -520,11 +516,11 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	endpoints.AddAll(failing)
 
 	if endpoints.Len() == 0 {
-		s.log.Debug("returning default response because there are no endpoints in the proposal", zap.String("endpoints", epStr(endpoints.Values()...)))
+		s.log.Debug().Str("endpoints", epStr(endpoints.Values()...)).Msg("returning default response because there are no endpoints in the proposal")
 		return defaultResponse, nil
 	}
 
-	s.log.Debug(("announcing proposal"))
+	s.log.Debug().Msg("announcing proposal")
 	s.announcedProposal.Set(false, true)
 	proposal := endpoints.Values()
 	var nodeStatusChangeList []api.StatusChange
@@ -564,21 +560,21 @@ func (s *Service) createNodeStatusChangeList(proposal []*remoting.Endpoint) []ap
 
 func (s *Service) filterAlertMessage(batched *remoting.BatchedAlertMessage, msg *remoting.AlertMessage, memSize int, ccid int64) bool {
 	dest := msg.GetEdgeDst()
-	log := s.log.With(zap.String("dest", epStr(dest)), zap.Int64("config", ccid))
-	log.Debug("alert message received", zap.Int("size", memSize), zap.Stringer("status", msg.GetEdgeStatus()))
+	log := s.log.With().Str("dest", epStr(dest)).Int64("config", ccid).Logger()
+	log.Debug().Int("size", memSize).Str("status", msg.GetEdgeStatus().String()).Msg("alert message received")
 
 	if ccid != msg.GetConfigurationId() {
-		log.Debug("alert message received, config mismatch", zap.Int64("old_config", msg.ConfigurationId))
+		log.Debug().Int64("old_config", msg.ConfigurationId).Msg("alert message received, config mismatch")
 		return false
 	}
 
 	if msg.GetEdgeStatus() == remoting.EdgeStatus_UP && s.view.IsHostPresent(dest) {
-		log.Debug("alert message with status UP received")
+		log.Debug().Msg("alert message with status UP received")
 		return false
 	}
 
 	if msg.GetEdgeStatus() == remoting.EdgeStatus_DOWN && !s.view.IsHostPresent(dest) {
-		log.Debug("alert message with status DOWN received, already in Configuration")
+		log.Debug().Msg("alert message with status DOWN received, already in Configuration")
 		return false
 	}
 

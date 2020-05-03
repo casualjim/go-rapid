@@ -5,8 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
+	"github.com/rs/zerolog"
 )
 
 // NewEvent creates a new event, named after the args
@@ -26,10 +25,8 @@ type Event struct {
 	Args interface{}
 }
 
-func (ev Event) MarshalLogObject(enc zapcore.ObjectEncoder) error {
-	enc.AddString("name", ev.Name)
-	enc.AddTime("at", ev.At)
-	return enc.AddReflected("args", ev.Args)
+func (ev Event) MarshalZerologObject(e *zerolog.Event) {
+	e.Str("name", ev.Name).Time("at", ev.At).Interface("args", ev.Args)
 }
 
 // NOOPHandler drops events on the floor without taking action
@@ -61,7 +58,7 @@ func (h *defaultHandler) On(event Event) error {
 	return h.on(event)
 }
 
-func newSubscription(log *zap.Logger, handler EventHandler, errorHandler func(error)) *eventSubscription {
+func newSubscription(log zerolog.Logger, handler EventHandler, errorHandler func(error)) *eventSubscription {
 	return &eventSubscription{
 		handler: handler,
 		onError: errorHandler,
@@ -72,7 +69,7 @@ func newSubscription(log *zap.Logger, handler EventHandler, errorHandler func(er
 type eventSubscription struct {
 	listener chan Event
 	handler  EventHandler
-	log      *zap.Logger
+	log      zerolog.Logger
 	once     sync.Once
 	onError  func(error)
 }
@@ -82,7 +79,7 @@ func (e *eventSubscription) Listen() {
 		e.listener = make(chan Event)
 		go func(listener chan Event) {
 			for evt := range listener {
-				e.log.Debug("calling On for event handler", zap.Object("event", evt))
+				e.log.Debug().Object("event", evt).Msg("calling On for event handler")
 				if err := e.handler.On(evt); err != nil {
 					e.onError(err)
 				}
@@ -161,23 +158,23 @@ type defaultEventBus struct {
 	channel      chan Event
 	handlers     []*eventSubscription
 	closing      chan chan struct{}
-	log          *zap.Logger
+	log          zerolog.Logger
 	errorHandler func(error)
 }
 
 // New event bus with specified logger
-func New(log *zap.Logger) EventBus {
+func New(log zerolog.Logger) EventBus {
 	return NewWithTimeout(log, 100*time.Millisecond)
 }
 
 // NewWithTimeout creates a new eventbus with a timeout after which an event handler gets canceled
-func NewWithTimeout(log *zap.Logger, timeout time.Duration) EventBus {
+func NewWithTimeout(log zerolog.Logger, timeout time.Duration) EventBus {
 	e := &defaultEventBus{
 		closing:      make(chan chan struct{}),
 		channel:      make(chan Event, 100),
 		log:          log,
 		lock:         new(sync.RWMutex),
-		errorHandler: func(err error) { log.Debug(err.Error()) },
+		errorHandler: func(err error) { log.Debug().Msg(err.Error()) },
 	}
 	go e.dispatcherLoop(timeout)
 	return e
@@ -188,13 +185,13 @@ func (e *defaultEventBus) dispatcherLoop(timeout time.Duration) {
 	for {
 		select {
 		case evt := <-e.channel:
-			e.log.Debug("Got event in channel", zap.Object("event", evt))
+			e.log.Debug().Object("event", evt).Msg("Got event in channel")
 
 			totWait.Add(1)
 			e.lock.RLock()
 			sz := len(e.handlers)
 			if sz == 0 {
-				e.log.Debug("there are no active listeners, skipping broadcast")
+				e.log.Debug().Msg("there are no active listeners, skipping broadcast")
 				e.lock.RUnlock()
 				totWait.Done()
 				continue
@@ -213,10 +210,10 @@ func (e *defaultEventBus) dispatcherLoop(timeout time.Duration) {
 					timer := time.NewTimer(timeout)
 					select {
 					case handler <- evt:
-						e.log.Debug("raised event in channel", zap.Object("event", evt))
+						e.log.Debug().Object("event", evt).Msg("raised event in channel")
 						timer.Stop()
 					case <-timer.C:
-						e.log.Error("sending to listener timed out", zap.Duration("timeout", timeout), zap.Object("event", evt))
+						e.log.Error().Object("event", evt).Dur("timeout", timeout).Msg("sending to listener timed out")
 					}
 				}(handler)
 			}
@@ -233,7 +230,7 @@ func (e *defaultEventBus) dispatcherLoop(timeout time.Duration) {
 
 			closed <- struct{}{}
 			close(closed)
-			e.log.Info("event bus closed")
+			e.log.Info().Msg("event bus closed")
 			return
 		}
 	}
@@ -255,7 +252,7 @@ func (e *defaultEventBus) Publish(evt Event) {
 // Subscribe to events published in the bus
 func (e *defaultEventBus) Subscribe(handlers ...EventHandler) {
 	e.lock.Lock()
-	e.log.Info("adding listeners", zap.Int("count", len(handlers)))
+	e.log.Info().Int("count", len(handlers)).Msg("adding listeners")
 	for _, handler := range handlers {
 		sub := newSubscription(e.log, handler, e.errorHandler)
 		e.handlers = append(e.handlers, sub)
@@ -267,11 +264,11 @@ func (e *defaultEventBus) Subscribe(handlers ...EventHandler) {
 func (e *defaultEventBus) Unsubscribe(handlers ...EventHandler) {
 	e.lock.Lock()
 	if len(e.handlers) == 0 {
-		e.log.Info("nothing to remove from handlers", zap.Int("count", len(handlers)))
+		e.log.Info().Int("count", len(handlers)).Msg("nothing to remove from handlers")
 		e.lock.Unlock()
 		return
 	}
-	e.log.Debug("removing listeners", zap.Int("count", len(handlers)))
+	e.log.Debug().Int("count", len(handlers)).Msg("removing listeners")
 	for _, h := range handlers {
 		for i, handler := range e.handlers {
 			if handler.Matches(h) {
@@ -286,7 +283,7 @@ func (e *defaultEventBus) Unsubscribe(handlers ...EventHandler) {
 }
 
 func (e *defaultEventBus) Close() error {
-	e.log.Info("closing eventbus")
+	e.log.Info().Msg("closing eventbus")
 	ch := make(chan struct{})
 	e.closing <- ch
 	<-ch
@@ -296,7 +293,7 @@ func (e *defaultEventBus) Close() error {
 }
 
 func (e *defaultEventBus) Len() int {
-	e.log.Debug("getting the length of the handlers")
+	e.log.Debug().Msg("getting the length of the handlers")
 	e.lock.RLock()
 	sz := len(e.handlers)
 	e.lock.RUnlock()

@@ -11,8 +11,7 @@ import (
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"github.com/pkg/errors"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/casualjim/go-rapid/remoting"
@@ -38,7 +37,7 @@ func DeferBy(startIn time.Duration, task func()) func() {
 // New classic consensus protocol
 func New(opts ...Option) (*Fast, error) {
 	var c config
-	c.log = zap.NewNop()
+	c.log = zerolog.Nop()
 	for _, apply := range opts {
 		apply(&c)
 	}
@@ -47,7 +46,7 @@ func New(opts ...Option) (*Fast, error) {
 		return nil, err
 	}
 
-	c.log = c.log.With(zap.String("addr", endpointStr(c.myAddr)))
+	c.log = c.log.With().Str("addr", endpointStr(c.myAddr)).Logger()
 	// The rate of a random expovariate variable, used to determine a jitter over a base delay to start classic
 	// rounds. This determines how many classic rounds we want to start per second on average. Does not
 	// affect correctness of the protocol, but having too many nodes starting rounds will increase messaging load,
@@ -120,7 +119,7 @@ func (f *Fast) Propose(ctx context.Context, vote []*remoting.Endpoint, recoveryD
 		recoveryDelay = f.randomDelay()
 	}
 
-	f.log.Debug("scheduling classic round fallback", zap.Duration("delay", recoveryDelay))
+	f.log.Debug().Dur("delay", recoveryDelay).Msg("scheduling classic round fallback")
 
 	f.cancelLock.Lock()
 	f.cancelClassic()
@@ -129,7 +128,7 @@ func (f *Fast) Propose(ctx context.Context, vote []*remoting.Endpoint, recoveryD
 }
 
 func (f *Fast) startClassicPaxosRound() {
-	f.log.Debug("recovery delay lapsed, starting classic paxos round")
+	f.log.Debug().Msg("recovery delay lapsed, starting classic paxos round")
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
@@ -141,12 +140,14 @@ func (f *Fast) startClassicPaxosRound() {
 // Invoked by the membership service when it receives a proposal for a fast round.
 func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRoundPhase2BMessage) {
 	if int64(f.configurationID) != msg.GetConfigurationId() {
-		opts := []zap.Field{zap.Int64("current", f.configurationID), zap.Int64("proposal", msg.GetConfigurationId())}
-		f.log.Debug("settings id mismatch for proposal.", opts...)
+		f.log.Debug().
+			Int64("current", f.configurationID).
+			Int64("proposal", msg.GetConfigurationId()).
+			Msg("settings id mismatch for proposal.")
 		return
 	}
 
-	f.log.Debug("handling fast round proposal", zap.String("req", protojson.Format(msg)))
+	f.log.Debug().Str("req", protojson.Format(msg)).Msg("handling fast round proposal")
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
@@ -162,44 +163,41 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 	quorumSize := f.membershipSize - maxFaults
 
 	if f.votesReceived.Len() < quorumSize {
-		f.log.Debug(
-			"fast round bailing",
-			zap.Int("count", count),
-			zap.Int("votes_received", f.votesReceived.Len()),
-			zap.Int("membership_size", f.membershipSize),
-			zap.Int("quorumSize", quorumSize),
-		)
+		f.log.Debug().
+			Int("count", count).
+			Int("votes_received", f.votesReceived.Len()).
+			Int("membership_size", f.membershipSize).
+			Int("quorumSize", quorumSize).
+			Msg("fast round bailing")
 		return
 	}
-	f.log.Debug(
-		"fast round deciding",
-		zap.Int("count", count),
-		zap.Int("membership_size", f.membershipSize),
-		zap.Int("quorumSize", quorumSize),
-		zap.String("endpoints", endpointsStr(msg.GetEndpoints())),
-	)
+	f.log.Debug().
+		Int("count", count).
+		Int("membership_size", f.membershipSize).
+		Int("quorumSize", quorumSize).
+		Str("endpoints", endpointsStr(msg.GetEndpoints())).
+		Msg("fast round deciding")
 
 	if count >= quorumSize {
-		f.log.Debug("decided on a view change", zap.String("endpoints", endpointsStr(msg.GetEndpoints())))
+		f.log.Debug().Str("endpoints", endpointsStr(msg.GetEndpoints())).Msg("decided on a view change")
 		// We have a successful proposal. Consume it.
 		if err := f.onDecide(msg.GetEndpoints()); err != nil {
-			f.log.Error("classic: failed to notify of view change", zap.Error(err))
+			f.log.Err(err).Msg("classic: failed to notify of view change")
 		}
 	} else {
 		// fallback protocol here
-		f.log.Debug(
-			"fast round may not succeed for proposal",
-			zap.Int("count", count),
-			zap.Int("membership_size", f.membershipSize),
-			zap.Int("quorumSize", quorumSize),
-			zap.String("endpoints", endpointsStr(msg.GetEndpoints())),
-		)
+		f.log.Debug().
+			Int("count", count).
+			Int("membership_size", f.membershipSize).
+			Int("quorumSize", quorumSize).
+			Str("endpoints", endpointsStr(msg.GetEndpoints())).
+			Msg("fast round may not succeed for proposal")
 	}
 }
 
 // Handle a rapid request
 func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
-	f.log.Debug("handling paxos message", zap.String("type", fmt.Sprintf("%T", req.GetContent())))
+	f.log.Debug().Str("type", fmt.Sprintf("%T", req.GetContent())).Msg("handling paxos message")
 	switch req.Content.(type) {
 	case *remoting.RapidRequest_FastRoundPhase2BMessage:
 		f.handleFastRoundProposal(ctx, req.GetFastRoundPhase2BMessage())
@@ -212,7 +210,7 @@ func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remotin
 	case *remoting.RapidRequest_Phase2BMessage:
 		f.classic.handlePhase2b(ctx, req.GetPhase2BMessage())
 	default:
-		return nil, errors.Errorf("unexpected message: %T", req.GetContent())
+		return nil, fmt.Errorf("unexpected message: %T", req.GetContent())
 	}
 
 	return defaultResponse, nil

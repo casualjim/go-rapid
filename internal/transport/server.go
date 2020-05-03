@@ -7,9 +7,12 @@ import (
 	"flag"
 	"io/ioutil"
 	"net"
+	"path"
 	"reflect"
+	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"google.golang.org/grpc/test/bufconn"
 	"google.golang.org/protobuf/proto"
@@ -17,8 +20,9 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/libp2p/go-reuseport"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -90,13 +94,10 @@ func (d *Server) SetMembership(svc membershipService) {
 
 func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
 	tn := reflect.Indirect(reflect.ValueOf(req.GetContent())).Type().Name()
-	log := d.Config.Log.With(
-		zap.Stringer("addr", d.Config.Me),
-		zap.String("request", tn),
-	)
-	log.Debug("handling request")
+	log := d.Config.Log.With().Str("addr", d.Config.Me.String()).Str("request", tn).Logger()
+	log.Debug().Msg("handling request")
 	if d.membership() != nil {
-		log.Debug("handling with membership service")
+		log.Debug().Msg("handling with membership service")
 		resp, err := d.membership().Handle(ctx, req)
 		if err == context.Canceled {
 			return nil, status.Errorf(codes.Canceled, "cancelled response")
@@ -112,7 +113,7 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 	 *     still bootstrapping. This extra information may or may not be respected by the failure detector,
 	 *     but is useful in large deployments.
 	 */
-	log.Debug("responding with bootstrap message")
+	log.Debug().Msg("responding with bootstrap message")
 	if _, ok := req.Content.(*remoting.RapidRequest_ProbeMessage); ok {
 		return bootstrapMsg, nil
 	}
@@ -122,8 +123,6 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 func (d *Server) Init() error {
 	if d.Config.listener == nil {
 		l, err := reuseport.Listen("tcp", d.Config.Me.String())
-
-		// l, err := net.Listen("tcp", d.Config.Me.String())
 		if err != nil {
 			return err
 		}
@@ -143,22 +142,17 @@ func (d *Server) Init() error {
 		opts = append(opts, grpc.Creds(creds))
 	}
 
-	//rh := grpc_recovery.WithRecoveryHandler(func(p interface{}) (err error) {
-	//	if e, ok := p.(error); ok {
-	//		d.Config.Log.Error("uncaught panic", zap.Error(e))
-	//		return status.Errorf(codes.Internal, "internal server error")
-	//	}
-	//	msg := fmt.Sprintf("%v", p)
-	//	d.Config.Log.Error(msg)
-	//	return status.Error(codes.Internal, msg)
-	//})
-	//
-	//opts = append(opts,
-	//	grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
-	//		grpc_recovery.UnaryServerInterceptor(rh),
-	//		grpc_zap.UnaryServerInterceptor(d.Config.Log.Named("grpc")),
-	//	)),
-	//)
+	lg := d.Config.Log.With().Str("component", "grpc").Logger()
+	opts = append(opts,
+		grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
+			unaryPanicServerInterceptor(lg),
+			unaryLoggerServerInterceptor(lg),
+		)),
+		grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
+			streamPanicServerInterceptor(lg),
+			streamLoggerServerInterceptor(lg),
+		)),
+	)
 
 	d.grpc = grpc.NewServer(opts...)
 	remoting.RegisterMembershipServiceServer(d.grpc, d)
@@ -172,14 +166,14 @@ func (d *Server) Start() error {
 	latch := make(chan struct{})
 	go func() {
 		close(latch)
-		log.Info("serving grpc at grpc://" + d.l.Addr().String())
+		log.Info().Msg("serving grpc at grpc://" + d.l.Addr().String())
 		if err := d.grpc.Serve(d.l); err != nil {
-			log.Error("start grpc server", zap.Error(err))
+			log.Err(err).Msg("start grpc server")
 		}
-		log.Info("stopped grpc server")
+		log.Info().Msg("stopped grpc server")
 	}()
 	<-latch
-	log.Info("started grpc server")
+	log.Info().Msg("started grpc server")
 	return nil
 }
 
@@ -189,34 +183,9 @@ func (d *Server) Stop() error {
 }
 
 func mkTLSConfig(scfg *ServerSettings) (credentials.TransportCredentials, error) {
-	// Inspired by https://blog.bracebin.com/achieving-perfect-ssl-labs-score-with-go
 	cfg := &tls.Config{
-		// Causes servers to use Go's default ciphersuite preferences,
-		// which are tuned to avoid attacks. Does nothing on clients.
 		PreferServerCipherSuites: true,
-		// Only use curves which have assembly implementations
-		// https://github.com/golang/go/tree/master/src/crypto/elliptic
-		CurvePreferences: []tls.CurveID{
-			tls.CurveP256,
-			tls.X25519,
-		},
-		NextProtos: []string{"h2", "http/1.1"},
-		// https://www.owasp.org/index.php/Transport_Layer_Protection_Cheat_Sheet#Rule_-_Only_Support_Strong_Protocols
-		MinVersion: tls.VersionTLS12,
-		// Use modern tls mode https://wiki.mozilla.org/Security/Server_Side_TLS#Modern_compatibility
-		// See security linter code: https://github.com/securego/gosec/blob/master/rules/tls_config.go#L11
-		// These ciphersuites support Forward Secrecy: https://en.wikipedia.org/wiki/Forward_secrecy
-		CipherSuites: []uint16{
-			tls.TLS_AES_128_GCM_SHA256,
-			tls.TLS_AES_256_GCM_SHA384,
-			tls.TLS_CHACHA20_POLY1305_SHA256,
-			tls.TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			tls.TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-		},
+		MinVersion:               tls.VersionTLS13,
 	}
 
 	var err error
@@ -237,6 +206,168 @@ func mkTLSConfig(scfg *ServerSettings) (credentials.TransportCredentials, error)
 		cfg.ClientCAs = caCertPool
 		cfg.ClientAuth = tls.RequireAndVerifyClientCert
 	}
-	cfg.BuildNameToCertificate()
 	return credentials.NewTLS(cfg), nil
+}
+
+// unaryPanicServerInterceptor returns a new unary server interceptor for panic recovery.
+func unaryPanicServerInterceptor(log zerolog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (_ interface{}, err error) {
+		panicked := true
+
+		defer func() {
+			if rvr := recover(); rvr != nil || panicked {
+				stack := make([]byte, 8*1024)
+				stack = stack[:runtime.Stack(stack, false)]
+
+				if per, ok := rvr.(error); ok {
+					log.Warn().Err(per).Bytes("stacktrace", stack).Msg("")
+					err = status.Error(codes.Internal, per.Error())
+				} else {
+					log.Info().Interface("error", rvr).Bytes("stacktrace", stack).Msg("")
+					err = status.Error(codes.Internal, "internal server error")
+				}
+			}
+		}()
+
+		resp, err := handler(ctx, req)
+		panicked = false
+		return resp, err
+	}
+}
+
+// streamPanicServerInterceptor returns a new streaming server interceptor for panic recovery.
+func streamPanicServerInterceptor(log zerolog.Logger) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
+		panicked := true
+
+		defer func() {
+			if rvr := recover(); rvr != nil || panicked {
+				stack := make([]byte, 8*1024)
+				stack = stack[:runtime.Stack(stack, false)]
+
+				if per, ok := rvr.(error); ok {
+					log.Warn().Err(per).Bytes("stacktrace", stack).Msg("")
+					err = status.Error(codes.Internal, per.Error())
+				} else {
+					log.Info().Interface("error", rvr).Bytes("stacktrace", stack).Msg("")
+					err = status.Error(codes.Internal, "internal server error")
+				}
+			}
+		}()
+
+		err = handler(srv, stream)
+		panicked = false
+		return err
+	}
+}
+
+// unaryLoggerServerInterceptor returns a new unary server interceptors that adds zerolog.Logger to the context.
+func unaryLoggerServerInterceptor(logger zerolog.Logger) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+		startTime := time.Now()
+
+		newCtx := newLoggerForCall(ctx, logger, info.FullMethod, startTime)
+
+		resp, err := handler(newCtx, req)
+		// if !o.shouldLog(info.FullMethod, err) {
+		// 	return resp, err
+		// }
+		code := status.Code(err)
+		level := serverCodeToLevel(code)
+
+		llog := zerolog.Ctx(newCtx).WithLevel(level)
+		if llog.Enabled() {
+			if err != nil {
+				llog = llog.Err(err)
+			}
+			llog.Str("grpc.code", code.String()).Dur("grpc.duration", time.Since(startTime)).Msgf("finished unary call with code: %s", code)
+		}
+		return resp, err
+	}
+}
+
+// streamLoggerServerInterceptor returns a new streaming server interceptor that adds zerolog.Logger to the context.
+func streamLoggerServerInterceptor(logger zerolog.Logger) grpc.StreamServerInterceptor {
+	return func(srv interface{}, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		startTime := time.Now()
+		newCtx := newLoggerForCall(stream.Context(), logger, info.FullMethod, startTime)
+		wrapped := grpc_middleware.WrapServerStream(stream)
+		wrapped.WrappedContext = newCtx
+
+		err := handler(srv, wrapped)
+		// if !o.shouldLog(info.FullMethod, err) {
+		// 	return err
+		// }
+		code := status.Code(err)
+		level := serverCodeToLevel(code)
+
+		llog := zerolog.Ctx(newCtx).WithLevel(level)
+		if llog.Enabled() {
+			if err != nil {
+				llog = llog.Err(err)
+			}
+			llog.Str("grpc.code", code.String()).Dur("grpc.duration", time.Since(startTime)).Msgf("finished streaming call with code: %s", code)
+		}
+		return err
+	}
+}
+
+func newLoggerForCall(ctx context.Context, logger zerolog.Logger, fullMethodString string, start time.Time) context.Context {
+	service := path.Dir(fullMethodString)[1:]
+	method := path.Base(fullMethodString)
+	builder := logger.With().
+		Str("system", "grpc").
+		Str("span.kind", "server").
+		Str("grpc.service", service).
+		Str("grpc.method", method).
+		Time("grpc.start_time", start)
+
+	if d, hasDeadline := ctx.Deadline(); hasDeadline {
+		builder = builder.Time("grpc.request.deadline", d)
+	}
+
+	callLog := builder.Logger()
+	return callLog.WithContext(ctx)
+}
+
+// serverCodeToLevel is the default implementation of gRPC return codes and interceptor log level for server side.
+func serverCodeToLevel(code codes.Code) zerolog.Level {
+	switch code {
+	case codes.OK:
+		return zerolog.InfoLevel
+	case codes.Canceled:
+		return zerolog.InfoLevel
+	case codes.Unknown:
+		return zerolog.ErrorLevel
+	case codes.InvalidArgument:
+		return zerolog.InfoLevel
+	case codes.DeadlineExceeded:
+		return zerolog.WarnLevel
+	case codes.NotFound:
+		return zerolog.InfoLevel
+	case codes.AlreadyExists:
+		return zerolog.InfoLevel
+	case codes.PermissionDenied:
+		return zerolog.WarnLevel
+	case codes.Unauthenticated:
+		return zerolog.InfoLevel // unauthenticated requests can happen
+	case codes.ResourceExhausted:
+		return zerolog.WarnLevel
+	case codes.FailedPrecondition:
+		return zerolog.WarnLevel
+	case codes.Aborted:
+		return zerolog.WarnLevel
+	case codes.OutOfRange:
+		return zerolog.WarnLevel
+	case codes.Unimplemented:
+		return zerolog.ErrorLevel
+	case codes.Internal:
+		return zerolog.ErrorLevel
+	case codes.Unavailable:
+		return zerolog.WarnLevel
+	case codes.DataLoss:
+		return zerolog.ErrorLevel
+	default:
+		return zerolog.ErrorLevel
+	}
 }

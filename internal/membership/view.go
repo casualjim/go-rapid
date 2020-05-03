@@ -3,6 +3,7 @@ package membership
 import (
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -11,8 +12,6 @@ import (
 	"github.com/Workiva/go-datastructures/slice/skip"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
-
-	"github.com/pkg/errors"
 
 	"github.com/OneOfOne/xxhash"
 	"github.com/casualjim/go-rapid/remoting"

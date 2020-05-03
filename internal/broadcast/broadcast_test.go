@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/mock"
-	"go.uber.org/zap"
 
 	"github.com/casualjim/go-rapid/mocks"
 	"github.com/casualjim/go-rapid/remoting"
@@ -39,7 +39,7 @@ func TestUnicastAll_Broadcast(t *testing.T) {
 		wg.Done()
 	})
 
-	broadcast := UnicastToAll(zap.NewNop(), client)
+	broadcast := UnicastToAll(zerolog.Nop(), client)
 	broadcast.Start()
 	defer broadcast.Stop()
 
@@ -57,7 +57,7 @@ func TestUnicastAll_SetMembership(t *testing.T) {
 	members := []*remoting.Endpoint{addr1, addr2, addr3}
 
 	client := &mocks.Client{}
-	uc := Unicast(zap.NewNop(), client, MatchAll)
+	uc := Unicast(zerolog.Nop(), client, MatchAll)
 	uc.Start()
 	defer uc.Stop()
 

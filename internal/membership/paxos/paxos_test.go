@@ -14,9 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"go.uber.org/zap"
-
 	"github.com/cornelk/hashmap"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/api"
 
@@ -71,7 +70,7 @@ func (p *paxosSuite) SetupTest() {
 func (p *paxosSuite) createNFastPaxosInstances(numNodes int, onDecide api.EndpointsFunc) *ConsensusRegistry {
 	// lg, err := zap.NewDevelopment()
 	// p.Require().NoError(err)
-	lg := zap.NewNop()
+	lg := zerolog.Nop()
 
 	creg := &ConsensusRegistry{data: hashmap.New(uintptr(numNodes))}
 	client := &DirectClient{paxosInstances: creg}

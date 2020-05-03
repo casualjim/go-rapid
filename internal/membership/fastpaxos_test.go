@@ -12,8 +12,8 @@ import (
 	"github.com/casualjim/go-rapid/internal/freeport"
 	"github.com/casualjim/go-rapid/internal/transport"
 	"github.com/casualjim/go-rapid/remoting"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/suite"
-	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )
 
@@ -24,7 +24,7 @@ func TestService_FastPaxos(t *testing.T) {
 		k:   10,
 		l:   3,
 		h:   8,
-		log: zap.NewNop(),
+		log: zerolog.Nop(),
 	})
 }
 
@@ -34,7 +34,7 @@ type fastPaxosSuite struct {
 	l        int
 	h        int
 	services []*Service
-	log      *zap.Logger
+	log      zerolog.Logger
 }
 
 func (fp *fastPaxosSuite) TearDownTest() {
@@ -188,7 +188,7 @@ func (fp *fastPaxosSuite) createAndStartService(name string, addr *remoting.Endp
 	cset := transport.DefaultSettings(node)
 	client := transport.NewGRPCClient(&cset, grpc.WithInsecure())
 
-	log := fp.log.Named(name)
+	log := fp.log.With().Str("logger", name).Logger()
 	svc := New(
 		node,
 		NewMultiNodeCutDetector(log, fp.k, fp.h, fp.l),
@@ -203,6 +203,6 @@ func (fp *fastPaxosSuite) createAndStartService(name string, addr *remoting.Endp
 	require.NoError(svc.Init())
 	fp.services = append(fp.services, svc)
 	require.NoError(svc.Start())
-	log.Info("added service", zap.Stringer("endpoint", addr))
+	log.Info().Str("endpoint", addr.String()).Msg("added service")
 	return svc
 }

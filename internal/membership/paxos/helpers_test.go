@@ -2,19 +2,17 @@ package paxos
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
-	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/cornelk/hashmap"
+	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/api"
-
-	"github.com/pkg/errors"
 
 	"github.com/casualjim/go-rapid/remoting"
 )
@@ -87,7 +85,7 @@ func (c *ConsensusRegistry) First() *Fast {
 }
 
 type DirectBroadcaster struct {
-	log            *zap.Logger
+	log            zerolog.Logger
 	mtypes         *typeRegistry
 	paxosInstances *ConsensusRegistry
 	client         api.Client
@@ -95,12 +93,12 @@ type DirectBroadcaster struct {
 
 func (d *DirectBroadcaster) Broadcast(ctx context.Context, req *remoting.RapidRequest) {
 	if d.mtypes.Get(req.Content) {
-		d.log.Info("exiting broadcast becuase of types filter")
+		d.log.Info().Msg("exiting broadcast becuase of types filter")
 		return
 	}
 
 	d.paxosInstances.EachKey(func(k *remoting.Endpoint) {
-		d.log.Info(fmt.Sprint("broadcasting to", endpointStr(k), "message:", protojson.Format(req)))
+		d.log.Info().Str("to", endpointStr(k)).Str("message", protojson.Format(req)).Msg("broadcasting")
 		go func() {
 			_, err := d.client.Do(ctx, k, req)
 			if err != nil {

@@ -2,6 +2,7 @@ package edgefailure
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -9,10 +10,9 @@ import (
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/mocks"
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/pkg/errors"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
 
 type counter struct {
@@ -167,7 +167,7 @@ func TestPingPong_Failure(t *testing.T) {
 	addr := api.Must(api.Endpoint("127.0.0.1:3939"))
 	var failed *remoting.Endpoint
 	det := &pingPongDetector{
-		log:          zap.NewNop(),
+		log:          zerolog.Nop(),
 		client:       cl,
 		addr:         addr,
 		failureCount: failureThreshold,
@@ -193,7 +193,7 @@ func TestPingPong_HandleFailure(t *testing.T) {
 		Return(nil, errors.New("dummy"))
 
 	var failed *remoting.Endpoint
-	det := PingPong(zap.NewNop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 
@@ -215,7 +215,7 @@ func TestPingPong_Bootstrapping(t *testing.T) {
 		}), nil)
 
 	var failed *remoting.Endpoint
-	det := PingPong(zap.NewNop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 
@@ -238,7 +238,7 @@ func TestPingPong_Bootstrapping_Failure(t *testing.T) {
 		}), nil)
 
 	var failed *remoting.Endpoint
-	det := PingPong(zap.NewNop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 	det.bootstrapResponseCount = bootstrapCountThreshold

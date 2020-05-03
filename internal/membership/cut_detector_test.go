@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/casualjim/go-rapid/api"
-	"go.uber.org/zap"
+	"github.com/rs/zerolog"
 
 	"github.com/google/uuid"
 
@@ -28,7 +28,7 @@ func endpoint(host string, port int) *remoting.Endpoint {
 func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 	t.Parallel()
 
-	b := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	b := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	dst := endpoint("127.0.0.2", 2)
 
 	var ret []*remoting.Endpoint
@@ -62,7 +62,7 @@ func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	var ret []*remoting.Endpoint
@@ -123,7 +123,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -210,7 +210,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -313,7 +313,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -390,7 +390,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 func TestMultiNodeCutDetector_Batch(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	const numNodes = 3
 
 	var hostAndPorts []*remoting.Endpoint
@@ -417,7 +417,7 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 	t.Parallel()
 
 	vw := NewView(k, nil, nil)
-	wb := NewMultiNodeCutDetector(zap.NewNop(), k, h, l)
+	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
 	const numNodes = 30
 	var hosts []*remoting.Endpoint
 	for i := 0; i < numNodes; i++ {
