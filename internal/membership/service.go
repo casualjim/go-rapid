@@ -312,13 +312,15 @@ func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
 
 func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
 	config := s.view.Configuration()
+	mdkeys, mdvalues := s.metadata.AllMetadata()
 	response := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
 		StatusCode:      remoting.JoinStatusCode_SAFE_TO_JOIN,
 		ConfigurationId: config.ConfigID,
 		Endpoints:       config.Nodes,
 		Identifiers:     config.Identifiers,
-		ClusterMetadata: s.metadata.AllMetadata(),
+		MetadataKeys:    mdkeys,
+		MetadataValues:  mdvalues,
 	}
 
 	for _, node := range proposal {
@@ -461,7 +463,7 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
 		resp.Endpoints = config.Nodes
 		resp.Identifiers = config.Identifiers
-		resp.ClusterMetadata = s.metadata.AllMetadata()
+		resp.MetadataKeys, resp.MetadataValues = s.metadata.AllMetadata()
 	} else {
 		s.log.Info().
 			Str("sender", epStr(req.GetSender())).

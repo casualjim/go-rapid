@@ -1,6 +1,7 @@
 package membership
 
 import (
+	"bytes"
 	"errors"
 	"sort"
 	"sync"
@@ -189,7 +190,7 @@ func hasProposal(addrs []*remoting.Endpoint, addr *remoting.Endpoint) bool {
 	sz := len(addrs)
 	pos := sort.Search(sz, func(i int) bool {
 		candidate := addrs[i]
-		return candidate.Hostname == addr.Hostname && candidate.Port == addr.Port
+		return bytes.Equal(candidate.Hostname, addr.Hostname) && candidate.Port == addr.Port
 	})
 	return pos != sz
 }

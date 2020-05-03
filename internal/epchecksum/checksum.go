@@ -10,7 +10,7 @@ import (
 )
 
 func Checksum(ep *remoting.Endpoint, seed int) uint64 {
-	hash := xxhash.ChecksumString64S(ep.Hostname, uint64(seed)) * 31
+	hash := xxhash.Checksum64S(ep.Hostname, uint64(seed)) * 31
 	bh := reflect.SliceHeader{
 		Data: uintptr(unsafe.Pointer(&ep.Port)),
 		Len:  binary.Size(uint64(ep.Port)),

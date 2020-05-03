@@ -20,13 +20,14 @@ func Endpoint(addr string) (*remoting.Endpoint, error) {
 		return nil, err
 	}
 
-	return &remoting.Endpoint{Hostname: h, Port: int32(pp)}, nil
+	return &remoting.Endpoint{Hostname: []byte(h), Port: int32(pp)}, nil
 }
 
 // MetadataRegistry per-node metadata which is immutable.
 // These are simple tags like roles or other configuration parameters.
 type MetadataRegistry struct {
 	lock  sync.RWMutex
+	//table palm.BTree
 	table map[*remoting.Endpoint]*remoting.Metadata
 }
 
@@ -48,15 +49,19 @@ func (m *MetadataRegistry) All() map[string]map[string][]byte {
 }
 
 // All the metadata known
-func (m *MetadataRegistry) AllMetadata() map[string]*remoting.Metadata {
+func (m *MetadataRegistry) AllMetadata() (keys []*remoting.Endpoint, values []*remoting.Metadata) {
 	m.lock.RLock()
 	defer m.lock.RUnlock()
 
-	result := make(map[string]*remoting.Metadata, len(m.table))
+	keys = make([]*remoting.Endpoint, len(m.table))
+	values = make([]*remoting.Metadata, len(m.table))
+	var i int
 	for k, v := range m.table {
-		result[fmt.Sprintf("%s:%d", k.Hostname, k.Port)] = v
+		keys[i] = k
+		values[i] = v
+		i++
 	}
-	return result
+	return
 }
 
 func (m *MetadataRegistry) MustGet(node *remoting.Endpoint) *remoting.Metadata {

@@ -59,8 +59,10 @@ type testClusters struct {
 	log         zerolog.Logger
 }
 
+var localhostb = []byte("127.0.0.1")
+
 func mkAddr(port int) *remoting.Endpoint {
-	return &remoting.Endpoint{Hostname: "127.0.0.1", Port: int32(port)}
+	return &remoting.Endpoint{Hostname: localhostb, Port: int32(port)}
 }
 
 func (c *testClusters) CreateN(numNodes int, seedEndpoint *remoting.Endpoint) {

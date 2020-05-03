@@ -11,7 +11,7 @@ import (
 )
 
 func endpoint(host string, port int) *remoting.Endpoint {
-	ep := &remoting.Endpoint{Hostname: host, Port: int32(port)}
+	ep := &remoting.Endpoint{Hostname: []byte(host), Port: int32(port)}
 	return ep
 }
 

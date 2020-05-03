@@ -64,7 +64,7 @@ func Endpoint(addr string) (*remoting.Endpoint, error) {
 		return nil, err
 	}
 
-	return &remoting.Endpoint{Hostname: hs, Port: int32(pi)}, nil
+	return &remoting.Endpoint{Hostname: []byte(hs), Port: int32(pi)}, nil
 }
 
 func Must(ep *remoting.Endpoint, err error) *remoting.Endpoint {

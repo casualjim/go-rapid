@@ -199,7 +199,7 @@ func createConnection(log zerolog.Logger, insecure bool) clientLoader {
 
 		return grpc.DialContext(
 			context.TODO(),
-			net.JoinHostPort(endpoint.Hostname, strconv.Itoa(int(endpoint.Port))),
+			net.JoinHostPort(string(endpoint.Hostname), strconv.Itoa(int(endpoint.Port))),
 			append(opts,
 				grpc.WithChainStreamInterceptor(
 					grpc_retry.StreamClientInterceptor(),

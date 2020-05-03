@@ -174,6 +174,7 @@ func mkNodeId(j int) *remoting.NodeId {
 func newaddr(port int) *remoting.Endpoint {
 	return endpoint("127.0.0.1", port)
 }
+
 //
 //func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 //	const numNodes = 10

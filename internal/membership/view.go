@@ -360,7 +360,7 @@ func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *Configurati
 	nds := make([]*remoting.Endpoint, nodes.Len())
 	nodes.Each(func(i int, addr *remoting.Endpoint) bool {
 		nds[i] = addr
-		hash = hash*37 + xxhash.ChecksumString64(nds[i].Hostname)
+		hash = hash*37 + xxhash.Checksum64(nds[i].Hostname)
 		prt := make([]byte, 4)
 		binary.LittleEndian.PutUint32(prt, uint32(nds[i].Port))
 		hash = hash*37 + xxhash.Checksum64(prt)

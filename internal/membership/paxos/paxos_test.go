@@ -1,6 +1,7 @@
 package paxos
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -23,6 +24,8 @@ import (
 
 	"github.com/stretchr/testify/suite"
 )
+
+var localhostb = []byte("127.0.0.1")
 
 func TestMain(m *testing.M) {
 	go func() {
@@ -82,7 +85,7 @@ func (p *paxosSuite) createNFastPaxosInstances(numNodes int, onDecide api.Endpoi
 	}
 
 	for i := 0; i < numNodes; i++ {
-		addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1234 + int32(i)}
+		addr := &remoting.Endpoint{Hostname: localhostb, Port: 1234 + int32(i)}
 		consensus, err := New(
 			Address(addr),
 			Client(client),
@@ -127,9 +130,9 @@ type classicRoundTestcase struct {
 }
 
 func (p *paxosSuite) coordinatorRuleTestsSameRank() []coordinatorRuleData {
-	p1 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5891}, {Hostname: "127.0.0.1", Port: 5821}}
-	p2 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5821}, {Hostname: "127.0.0.1", Port: 5872}}
-	noiseProposal := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 1}, {Hostname: "127.0.0.1", Port: 2}}
+	p1 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5891}, {Hostname: localhostb, Port: 5821}}
+	p2 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5821}, {Hostname: localhostb, Port: 5872}}
+	noiseProposal := []*remoting.Endpoint{{Hostname: localhostb, Port: 1}, {Hostname: localhostb, Port: 2}}
 	proposals := [][]*remoting.Endpoint{p1, p2, noiseProposal}
 
 	return []coordinatorRuleData{
@@ -177,7 +180,7 @@ func (p *paxosSuite) TestCoordinatorRuleSameRank() {
 			}
 			for iterations := 0; iterations < 100; iterations++ {
 				onDecide := api.EndpointsFunc(func(_ []*remoting.Endpoint) error { return nil })
-				addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1234}
+				addr := &remoting.Endpoint{Hostname: localhostb, Port: 1234}
 				paxos, err := NewClassic(
 					Address(addr),
 					ConfigurationID(1),
@@ -239,7 +242,7 @@ func (p *paxosSuite) TestCoordinatorRule() {
 			}
 			for iterations := 0; iterations < 100; iterations++ {
 				onDecide := api.EndpointsFunc(func(_ []*remoting.Endpoint) error { return nil })
-				addr := &remoting.Endpoint{Hostname: "127.0.0.1", Port: 1234}
+				addr := &remoting.Endpoint{Hostname: localhostb, Port: 1234}
 				paxos, err := NewClassic(
 					Address(addr),
 					ConfigurationID(1),
@@ -292,9 +295,9 @@ func (p *paxosSuite) TestCoordinatorRule() {
 }
 
 func (p *paxosSuite) coordinatorRuleTests() []coordinatorRuleData {
-	p1 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5891}, {Hostname: "127.0.0.1", Port: 5821}}
-	p2 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5821}, {Hostname: "127.0.0.1", Port: 5872}}
-	noiseProposal := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 1}, {Hostname: "127.0.0.1", Port: 2}}
+	p1 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5891}, {Hostname: localhostb, Port: 5821}}
+	p2 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5821}, {Hostname: localhostb, Port: 5872}}
+	noiseProposal := []*remoting.Endpoint{{Hostname: localhostb, Port: 1}, {Hostname: localhostb, Port: 2}}
 	proposals := [][]*remoting.Endpoint{p1, p2, noiseProposal}
 
 	return []coordinatorRuleData{
@@ -354,7 +357,7 @@ func (p *paxosSuite) TestRecoveryForSinglePropose() {
 
 			instances := p.createNFastPaxosInstances(num, onDecide)
 
-			proposal := []*remoting.Endpoint{{Hostname: "127.14.12.3", Port: 1234}}
+			proposal := []*remoting.Endpoint{{Hostname: []byte("127.14.12.3"), Port: 1234}}
 			// instances is backed by a map, so first is really just any at random
 			go func() { instances.First().Propose(context.Background(), proposal, 50*time.Millisecond) }()
 
@@ -376,7 +379,7 @@ func (p *paxosSuite) TestRecoveryFromFastRoundDifferentProposals() {
 				return nil
 			})
 			instances := p.createNFastPaxosInstances(num, onDecide)
-			proposal := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 1234}}
+			proposal := []*remoting.Endpoint{{Hostname: localhostb, Port: 1234}}
 
 			instances.Each(func(host *remoting.Endpoint, inst *Fast) {
 				go inst.Propose(context.Background(), proposal, 100*time.Millisecond)
@@ -407,7 +410,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 
 			p.mtypes.Register(&remoting.RapidRequest_FastRoundPhase2BMessage{})
 
-			proposal := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 1234}}
+			proposal := []*remoting.Endpoint{{Hostname: localhostb, Port: 1234}}
 
 			instances.Each(func(host *remoting.Endpoint, inst *Fast) {
 				go inst.Propose(context.Background(), proposal, 100*time.Millisecond)
@@ -428,8 +431,8 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 }
 
 func (p *paxosSuite) classicRoundAfterSuccessfulFastRoundMixedValues() []classicRoundTestcase {
-	p1 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5891}, {Hostname: "127.0.0.1", Port: 5821}}
-	p2 := []*remoting.Endpoint{{Hostname: "127.0.0.1", Port: 5821}, {Hostname: "127.0.0.1", Port: 5872}}
+	p1 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5891}, {Hostname: localhostb, Port: 5821}}
+	p2 := []*remoting.Endpoint{{Hostname: localhostb, Port: 5821}, {Hostname: localhostb, Port: 5872}}
 	p1p2 := append(p1, p2...)
 
 	return []classicRoundTestcase{
@@ -485,7 +488,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 				var contains bool
 				expected := decision[0][0]
 				for _, v := range tc.DecisionChoices {
-					if v.GetHostname() == expected.GetHostname() && v.GetPort() == expected.GetPort() {
+					if bytes.Equal(v.GetHostname(), expected.GetHostname()) && v.GetPort() == expected.GetPort() {
 						contains = true
 						break
 					}

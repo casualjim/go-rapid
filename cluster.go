@@ -446,10 +446,10 @@ func (c *Cluster) startMembershipServiceFromJoinResponse(jr *remoting.JoinRespon
 		return errors.New("join response has no identifiers")
 	}
 
-	allMeta := make(map[string]*remoting.Metadata, len(jr.GetClusterMetadata()))
-	for k, v := range jr.GetClusterMetadata() {
-		allMeta[k] = v
-	}
+	//allMeta := make(map[string]*remoting.Metadata, len(jr.GetClusterMetadata()))
+	//for k, v := range jr.GetClusterMetadata() {
+	//	allMeta[k] = v
+	//}
 
 	members := membership.New(
 		c.me,
