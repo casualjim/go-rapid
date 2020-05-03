@@ -461,6 +461,7 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
 		resp.Endpoints = config.Nodes
 		resp.Identifiers = config.Identifiers
+		resp.ClusterMetadata = s.metadata.AllMetadata()
 	} else {
 		s.log.Info().
 			Str("sender", epStr(req.GetSender())).
