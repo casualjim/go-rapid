@@ -179,6 +179,25 @@ func newaddr(port int) *remoting.Endpoint {
 	return endpoint("127.0.0.1", port)
 }
 
+func TestJoinMultipleNodes_CheckRace(t *testing.T) {
+	const (
+		k        = 10
+		l        = 2
+		h        = 8
+		numNodes = 10
+	)
+
+	enc := zap.NewDevelopmentEncoderConfig()
+	enc.EncodeLevel = zapcore.CapitalColorLevelEncoder
+	lg := zap.New(zapcore.NewCore(
+		zapcore.NewConsoleEncoder(enc),
+		zapcore.AddSync(colorable.NewColorableStdout()),
+		zapcore.DebugLevel,
+	))
+	zap.ReplaceGlobals(lg)
+
+}
+
 func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 	const numNodes = 10
 	// ports := freeport.MustNextN(numNodes)

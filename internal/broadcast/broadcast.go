@@ -2,10 +2,11 @@ package broadcast
 
 import (
 	"context"
-	"google.golang.org/protobuf/encoding/protojson"
 	"math/rand"
 	"sync"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/remoting"

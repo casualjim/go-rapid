@@ -3,12 +3,13 @@ package paxos
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
 	"math"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/pkg/errors"
 	"go.uber.org/zap"

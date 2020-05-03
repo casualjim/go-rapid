@@ -3,8 +3,9 @@ package paxos
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
 	"sync"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"

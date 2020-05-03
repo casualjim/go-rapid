@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 

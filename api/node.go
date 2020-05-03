@@ -17,22 +17,12 @@ func NewNode(addr *remoting.Endpoint, meta map[string]string) Node {
 	}
 }
 
-// type NodeAddr struct {
-// 	Hostname string
-// 	Port     string
-// }
-
-// func (n NodeAddr) String() string {
-// 	return fmt.Sprintf("%s:%d", n.Hostname, n.Port)
-// }
-
 type Node struct {
 	Addr *remoting.Endpoint
 	meta map[string]string
 }
 
 func (n Node) String() string {
-	// return n.Addr.String()
 	return fmt.Sprintf("%s:%d", n.Addr.GetHostname(), n.Addr.GetPort())
 }
 
