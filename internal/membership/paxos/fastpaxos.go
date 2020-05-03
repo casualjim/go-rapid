@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	baseDelay = time.Second
+	defaultBaseDelay = time.Second
 )
 
 func DeferBy(startIn time.Duration, task func()) func() {
@@ -38,6 +38,7 @@ func DeferBy(startIn time.Duration, task func()) func() {
 func New(opts ...Option) (*Fast, error) {
 	var c config
 	c.log = zerolog.Nop()
+	c.consensusFallbackTimeoutBaseDelay = defaultBaseDelay
 	for _, apply := range opts {
 		apply(&c)
 	}
@@ -218,9 +219,9 @@ func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remotin
 
 var defaultResponse = &remoting.RapidResponse{}
 
-func (c *Fast) randomDelay() time.Duration {
-	jitter := time.Duration(-float64(time.Second) * math.Log(1-rand.Float64()) / c.jitterRate)
-	return jitter + baseDelay
+func (f *Fast) randomDelay() time.Duration {
+	jitter := time.Duration(-float64(time.Second) * math.Log(1-rand.Float64()) / f.jitterRate)
+	return jitter + f.consensusFallbackTimeoutBaseDelay
 }
 
 type counter struct {

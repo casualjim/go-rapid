@@ -37,4 +37,5 @@ protoc \
   -I=remoting \
   -I="$(go list -m -f '{{ .Dir }}' github.com/golang/protobuf)" \
   --go_out=plugins=grpc:remoting \
+  --grpchan_out=remoting \
   remoting/rapid.proto

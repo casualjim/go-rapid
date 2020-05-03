@@ -174,82 +174,83 @@ func mkNodeId(j int) *remoting.NodeId {
 func newaddr(port int) *remoting.Endpoint {
 	return endpoint("127.0.0.1", port)
 }
-
-func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
-	const numNodes = 10
-	// ports := freeport.MustNextN(numNodes)
-	serverPort := 1234
-	firstAddr := newaddr(serverPort)
-
-	for i := 0; i < numNodes; i++ {
-		view := NewView(m.k, nil, nil)
-		for j := 0; j < numNodes; j++ {
-			m.Require().NoError(
-				view.RingAdd(newaddr(serverPort+j), mkNodeId(j)),
-			)
-		}
-		m.createAndStartMembershipService(fmt.Sprintf("server-%d", i), newaddr(serverPort+i), view)
-	}
-
-	// Join protocol starts here
-	nodeID := api.NewNodeId()
-	joinerAddr, joinerClient := m.makeClient("joiner", serverPort-1)
-
-	p1Res, err := m.sendPreJoinMessage(joinerClient, firstAddr, joinerAddr, nodeID)
-	require := m.Require()
-	require.NoError(err)
-	require.NotNil(p1Res)
-	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, p1Res.GetStatusCode())
-	require.Len(p1Res.GetEndpoints(), m.k)
-
-	// Batch together requests to the same node.
-	hostsAtClient := p1Res.GetEndpoints()
-	ringNumbersPerObserver := make(map[*remoting.Endpoint][]int32)
-	for ringNumber, host := range hostsAtClient {
-		ringNumbersPerObserver[host] = append(ringNumbersPerObserver[host], int32(ringNumber))
-	}
-
-	// Try #1: successfully join here.
-	ctx, group1 := newJoinResponseGroups(zerolog.Nop(), m.ctx, len(ringNumbersPerObserver))
-	for k, rings := range ringNumbersPerObserver {
-		k, rings := k, rings // pin
-		group1.Call(func() (*remoting.RapidResponse, error) {
-			req := &remoting.JoinMessage{
-				Sender:          joinerAddr,
-				NodeId:          nodeID,
-				ConfigurationId: p1Res.GetConfigurationId(),
-				RingNumber:      rings,
-			}
-			return joinerClient.Do(ctx, k, remoting.WrapRequest(req))
-		})
-	}
-	joinResponses := group1.Wait()
-	require.Len(joinResponses, len(ringNumbersPerObserver))
-	for _, jr := range joinResponses {
-		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
-	}
-
-	// Try #2. Should get back the full Configuration from all nodes.
-	ctx, group2 := newJoinResponseGroups(m.log.With().Str("logger", "join_reponse_group2").Logger(), m.ctx, len(ringNumbersPerObserver))
-	for k, rings := range ringNumbersPerObserver {
-		k, rings := k, rings // pin
-		group2.Call(func() (*remoting.RapidResponse, error) {
-			req := &remoting.JoinMessage{
-				Sender:          joinerAddr,
-				NodeId:          nodeID,
-				ConfigurationId: p1Res.GetConfigurationId(),
-				RingNumber:      rings,
-			}
-			return joinerClient.Do(ctx, k, remoting.WrapRequest(req))
-		})
-	}
-	retriedResponses := group2.Wait()
-	require.Len(retriedResponses, len(ringNumbersPerObserver))
-	for _, jr := range retriedResponses {
-		// require.Len(jr.GetEndpoints(), numNodes+1)
-		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode(), "expected %s but got %s", remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
-	}
-}
+//
+//func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
+//	const numNodes = 10
+//	// ports := freeport.MustNextN(numNodes)
+//	serverPort := 1234
+//	firstAddr := newaddr(serverPort)
+//
+//	for i := 0; i < numNodes; i++ {
+//		view := NewView(m.k, nil, nil)
+//		for j := 0; j < numNodes; j++ {
+//			m.Require().NoError(
+//				view.RingAdd(newaddr(serverPort+j), mkNodeId(j)),
+//			)
+//		}
+//		m.createAndStartMembershipService(fmt.Sprintf("server-%d", i), newaddr(serverPort+i), view)
+//	}
+//
+//	// Join protocol starts here
+//	nodeID := api.NewNodeId()
+//	joinerAddr, joinerClient := m.makeClient("joiner", serverPort-1)
+//
+//	p1Res, err := m.sendPreJoinMessage(joinerClient, firstAddr, joinerAddr, nodeID)
+//	require := m.Require()
+//	require.NoError(err)
+//	require.NotNil(p1Res)
+//	require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, p1Res.GetStatusCode())
+//	require.Len(p1Res.GetEndpoints(), m.k)
+//
+//	// Batch together requests to the same node.
+//	hostsAtClient := p1Res.GetEndpoints()
+//	ringNumbersPerObserver := make(map[*remoting.Endpoint][]int32)
+//	for ringNumber, host := range hostsAtClient {
+//		ringNumbersPerObserver[host] = append(ringNumbersPerObserver[host], int32(ringNumber))
+//	}
+//
+//	// Try #1: successfully join here.
+//	ctx, group1 := newJoinResponseGroups(zerolog.Nop(), m.ctx, len(ringNumbersPerObserver))
+//	for k, rings := range ringNumbersPerObserver {
+//		k, rings := k, rings // pin
+//		group1.Call(func() (*remoting.RapidResponse, error) {
+//			req := &remoting.JoinMessage{
+//				Sender:          joinerAddr,
+//				NodeId:          nodeID,
+//				ConfigurationId: p1Res.GetConfigurationId(),
+//				RingNumber:      rings,
+//			}
+//			return joinerClient.Do(ctx, k, remoting.WrapRequest(req))
+//		})
+//	}
+//	joinResponses := group1.Wait()
+//	require.Len(joinResponses, len(ringNumbersPerObserver))
+//	for _, jr := range joinResponses {
+//		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
+//	}
+//
+//	// Try #2. Should get back the full Configuration from all nodes.
+//	ctx, group2 := newJoinResponseGroups(m.log.With().Str("logger", "join_reponse_group2").Logger(), m.ctx, len(ringNumbersPerObserver))
+//	for k, rings := range ringNumbersPerObserver {
+//		k, rings := k, rings // pin
+//		group2.Call(func() (*remoting.RapidResponse, error) {
+//			req := &remoting.JoinMessage{
+//				Sender:          joinerAddr,
+//				NodeId:          nodeID,
+//				ConfigurationId: p1Res.GetConfigurationId(),
+//				RingNumber:      rings,
+//			}
+//			return joinerClient.Do(ctx, k, remoting.WrapRequest(req))
+//		})
+//	}
+//	retriedResponses := group2.Wait()
+//	require.Len(retriedResponses, len(ringNumbersPerObserver))
+//	//<-time.After(5*time.Second)
+//	for _, jr := range retriedResponses {
+//		// require.Len(jr.GetEndpoints(), numNodes+1)
+//		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode(), "expected %s but got %s", remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
+//	}
+//}
 
 func (m *messagingSuite) TestJoinWithSingleNodeBootstrap() {
 	var (

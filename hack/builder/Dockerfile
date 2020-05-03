@@ -15,6 +15,7 @@ RUN set -e &&\
 	go get -u github.com/golang/protobuf/proto &&\
   GO111MODULE=on go get -u github.com/golang/protobuf/protoc-gen-go@latest &&\
 	GO111MODULE=on go get -u google.golang.org/grpc@latest &&\
+  go get -u github.com/fullstorydev/grpchan/cmd/protoc-gen-grpchan &&\
 	GO111MODULE=on go get -u github.com/vektra/mockery/cmd/mockery@latest &&\
   apt-get autoremove -yqq &&\
   apt-get clean -y &&\

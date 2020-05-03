@@ -398,7 +398,7 @@ func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoi
 	s.log.Debug().Str("status_code", statusCode.String()).Int("observers", len(endpoints)).Msg("collected the observers")
 	return remoting.WrapResponse(&remoting.JoinResponse{
 		Sender:          s.me.Addr,
-		ConfigurationId: int64(s.view.ConfigurationID()),
+		ConfigurationId: s.view.ConfigurationID(),
 		StatusCode:      statusCode,
 		Endpoints:       endpoints,
 	}), nil

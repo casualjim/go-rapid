@@ -35,13 +35,17 @@ func MustNextN(n int) []int {
 // Next n free ports
 func NextN(n int) ([]int, error) {
 	result := make([]int, n)
+	listeners := make([]net.Listener, n)
 	for i := 0; i < n; i++ {
 		listener, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			return nil, err
 		}
-		defer listener.Close()
+		listeners[i] = listener
 		result[i] = listener.Addr().(*net.TCPAddr).Port
+	}
+	for _, l := range listeners {
+		_ = l.Close()
 	}
 	return result, nil
 }

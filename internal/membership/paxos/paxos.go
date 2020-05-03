@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 	"unsafe"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -34,6 +35,8 @@ type config struct {
 
 	membershipSize int
 	onDecide       api.EndpointsFunc
+
+	consensusFallbackTimeoutBaseDelay time.Duration
 }
 
 // Logger to use for Classic
@@ -45,19 +48,19 @@ func Logger(lg zerolog.Logger) Option {
 
 func (c *config) Validate() error {
 	if c.broadcaster == nil {
-		return errors.New("Classic needs a broadcaster, got nil")
+		return errors.New("classic paxos needs a broadcaster, got nil")
 	}
 	if c.client == nil {
-		return errors.New("Classic needs a rapid grpc client, got nil")
+		return errors.New("classic paxos needs a rapid grpc client, got nil")
 	}
 	if c.configurationID == 0 {
 		return fmt.Errorf("invalid configuration id: %d", c.configurationID)
 	}
 	if c.myAddr == nil {
-		return errors.New("Classic needs the address of this node")
+		return errors.New("classic paxos needs the address of this node")
 	}
 	if c.onDecide == nil {
-		return errors.New("Classic needs a decision callback")
+		return errors.New("classic paxos needs a decision callback")
 	}
 	return nil
 }
@@ -107,10 +110,17 @@ func OnDecision(cb api.EndpointsFunc) Option {
 	}
 }
 
+func ConsensusFallbackTimeoutBaseDelay(dur time.Duration) Option {
+	return func(c *config) {
+		c.consensusFallbackTimeoutBaseDelay = dur
+	}
+}
+
 // NewClassic creates a new classic classic consensus protocol
 func NewClassic(opts ...Option) (*Classic, error) {
 	var c config
 	c.log = zerolog.Nop()
+	c.consensusFallbackTimeoutBaseDelay = defaultBaseDelay
 	for _, apply := range opts {
 		apply(&c)
 	}
