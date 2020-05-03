@@ -3,12 +3,14 @@ package membership
 import (
 	"context"
 	"fmt"
-	"google.golang.org/protobuf/encoding/protojson"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/nayuta87/queue"
 
@@ -322,7 +324,7 @@ func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
 	for _, node := range proposal {
 		if s.joinersToRespond.Has(node) {
 			resp := remoting.WrapResponse(response)
-			s.joinersToRespond.Deque(node, *resp)
+			s.joinersToRespond.Deque(node, proto.Clone(resp).(*remoting.RapidResponse))
 		}
 	}
 	return nil
@@ -413,7 +415,7 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 			zap.Int("size", s.view.Size()),
 		)
 
-		fut := make(chan remoting.RapidResponse)
+		fut := make(chan *remoting.RapidResponse)
 		s.joinersToRespond.GetOrAdd(req.GetSender(), fut)
 
 		s.alertBatcher.Enqueue(&remoting.AlertMessage{
@@ -428,7 +430,7 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 
 		select {
 		case resp := <-fut:
-			return &resp, nil
+			return resp, nil
 		case <-ctx.Done():
 			return nil, context.Canceled
 		}
@@ -680,38 +682,38 @@ func (j *joiners) key(ep *remoting.Endpoint) uint64 {
 	return epchecksum.Checksum(ep, 0)
 }
 
-func (j *joiners) GetOrAdd(key *remoting.Endpoint, fut chan remoting.RapidResponse) {
-	var res chan chan remoting.RapidResponse
+func (j *joiners) GetOrAdd(key *remoting.Endpoint, fut chan *remoting.RapidResponse) {
+	var res chan chan *remoting.RapidResponse
 	// j.lock.Lock()
 
 	k := j.key(key)
 	if v, ok := j.data.Load(k); !ok {
-		res = make(chan chan remoting.RapidResponse, 500)
+		res = make(chan chan *remoting.RapidResponse, 500)
 		j.data.Store(k, res)
 	} else {
-		res = v.(chan chan remoting.RapidResponse)
+		res = v.(chan chan *remoting.RapidResponse)
 	}
 	// j.lock.Unlock()
 
 	res <- fut
 }
 
-func (j *joiners) Enqueue(key *remoting.Endpoint, resp chan remoting.RapidResponse) {
+func (j *joiners) Enqueue(key *remoting.Endpoint, resp chan *remoting.RapidResponse) {
 	// j.lock.Lock()
 
 	if q, ok := j.data.Load(j.key(key)); ok {
-		ch := q.(chan chan remoting.RapidResponse)
+		ch := q.(chan chan *remoting.RapidResponse)
 		ch <- resp
 	}
 	// j.lock.Unlock()
 }
 
-func (j *joiners) Deque(key *remoting.Endpoint, resp remoting.RapidResponse) {
+func (j *joiners) Deque(key *remoting.Endpoint, resp *remoting.RapidResponse) {
 	// j.lock.Lock()
 	k := j.key(key)
 
 	if cc, ok := j.data.Load(k); ok {
-		ch := cc.(chan chan remoting.RapidResponse)
+		ch := cc.(chan chan *remoting.RapidResponse)
 		j.data.Delete(k)
 		close(ch)
 		for f := range ch {

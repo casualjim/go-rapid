@@ -1,4 +1,4 @@
-FROM debian
+FROM node:12.6-buster-slim
 
 RUN set -e &&\
   apt-get update -yq &&\

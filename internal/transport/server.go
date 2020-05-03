@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"google.golang.org/grpc/test/bufconn"
+	"google.golang.org/protobuf/proto"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -100,8 +101,7 @@ func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*
 		if err == context.Canceled {
 			return nil, status.Errorf(codes.Canceled, "cancelled response")
 		}
-		r := *resp
-		return &r, err
+		return proto.Clone(resp).(*remoting.RapidResponse), err
 	}
 	/*
 	 * This is a special case which indicates that:
