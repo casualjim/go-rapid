@@ -493,7 +493,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 						break
 					}
 				}
-				p.Require().True(contains, "mismatch with decision chaoices: %v != %v", decision, tc.DecisionChoices)
+				p.Require().True(contains, "mismatch with decision choices: %v != %v", decision, tc.DecisionChoices)
 				for _, v := range decision {
 					p.Require().Equal(decision[0], v)
 				}

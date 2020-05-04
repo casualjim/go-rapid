@@ -10,11 +10,9 @@ import (
 	"time"
 
 	"github.com/casualjim/go-rapid/api"
+	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/hlts2/gocache"
 	"github.com/rs/zerolog"
-	"go.uber.org/zap"
-
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -202,30 +200,25 @@ func createConnection(log zerolog.Logger, insecure bool) clientLoader {
 			net.JoinHostPort(string(endpoint.Hostname), strconv.Itoa(int(endpoint.Port))),
 			append(opts,
 				grpc.WithChainStreamInterceptor(
-					grpc_retry.StreamClientInterceptor(),
 					streamClientInterceptor(log),
+					grpc_retry.StreamClientInterceptor(),
 				),
 				grpc.WithChainUnaryInterceptor(
-					grpc_retry.UnaryClientInterceptor(),
 					unaryClientInterceptor(log),
+					grpc_retry.UnaryClientInterceptor(),
 				),
 			)...,
 		)
 	}
 }
 
-var (
-	// ClientField is used in every client-side log statement made through grpc_zap. Can be overwritten before initialization.
-	ClientField = zap.String("span.kind", "client")
-)
-
 // UnaryClientInterceptor returns a new unary client interceptor that optionally logs the execution of external gRPC calls.
 func unaryClientInterceptor(logger zerolog.Logger) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-		logger = newClientLoggerFields(ctx, logger, method)
+		lg := newClientLoggerFields(ctx, logger, method)
 		startTime := time.Now()
-		err := invoker(logger.WithContext(ctx), method, req, reply, cc, opts...)
-		logFinalClientLine(logger, startTime, err, "finished client unary call")
+		err := invoker(lg.WithContext(ctx), method, req, reply, cc, opts...)
+		logFinalClientLine(lg, startTime, err, "finished client unary call")
 		return err
 	}
 }
@@ -233,10 +226,10 @@ func unaryClientInterceptor(logger zerolog.Logger) grpc.UnaryClientInterceptor {
 // streamClientInterceptor returns a new streaming client interceptor that optionally logs the execution of external gRPC calls.
 func streamClientInterceptor(logger zerolog.Logger) grpc.StreamClientInterceptor {
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
-		logger = newClientLoggerFields(ctx, logger, method)
+		lg := newClientLoggerFields(ctx, logger, method)
 		startTime := time.Now()
-		clientStream, err := streamer(logger.WithContext(ctx), desc, cc, method, opts...)
-		logFinalClientLine(logger, startTime, err, "finished client streaming call")
+		clientStream, err := streamer(lg.WithContext(ctx), desc, cc, method, opts...)
+		logFinalClientLine(lg, startTime, err, "finished client streaming call")
 		return clientStream, err
 	}
 }

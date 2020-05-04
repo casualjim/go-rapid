@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 
-	"github.com/Workiva/go-datastructures/common"
-
 	"github.com/Workiva/go-datastructures/slice/skip"
+
+	"google.golang.org/protobuf/proto"
+
+	"github.com/Workiva/go-datastructures/common"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 
@@ -66,7 +69,7 @@ type View struct {
 	k                           int
 	rings                       []*endpointList
 	lock                        sync.RWMutex
-	identifiersSeen             *nodeIDList
+	identifiersSeen             nodeIDList
 	config                      *Configuration
 	shouldUpdateConfigurationID bool
 }
@@ -288,7 +291,7 @@ func (v *View) GetRing(k int) []*remoting.Endpoint {
 func (v *View) getRing(k int) []*remoting.Endpoint {
 	addrs := make([]*remoting.Endpoint, v.rings[k].Len())
 	v.rings[k].Each(func(i int, v *remoting.Endpoint) bool {
-		addrs[i] = v
+		addrs[i] = proto.Clone(v).(*remoting.Endpoint)
 		return true
 	})
 	return addrs
@@ -344,7 +347,7 @@ func (v *View) Configuration() *Configuration {
 }
 
 // newConfiguration initializes a new Configuration object from identifiers and nodes
-func newConfiguration(identifiers *nodeIDList, nodes *endpointList) *Configuration {
+func newConfiguration(identifiers nodeIDList, nodes *endpointList) *Configuration {
 	idfs := make([]*remoting.NodeId, identifiers.Len())
 	var hash uint64 = 1
 	identifiers.Each(func(i int, id *remoting.NodeId) bool {
@@ -421,15 +424,7 @@ func (n *NodeNotInRingError) Error() string {
 	return fmt.Sprintf("node not in ring: %s", n.Node)
 }
 
-type nodeIdEntry struct {
-	id *remoting.NodeId
-}
-
-func (n nodeIdEntry) Compare(cmp common.Comparator) int {
-	other := cmp.(nodeIdEntry)
-
-	l := n.id
-	r := other.id
+func compareNodeId(l, r *remoting.NodeId) int {
 	// first comepare high bits
 	if l.GetHigh() < r.GetHigh() {
 		return -1
@@ -457,31 +452,33 @@ type endpointEntry struct {
 func (e endpointEntry) Compare(cmp common.Comparator) int {
 	hcl := e.checksum
 	hcr := cmp.(endpointEntry).checksum
+	return compareEndpoints(hcl, hcr)
+}
 
-	if hcl > hcr {
+func compareEndpoints(l, r uint64) int {
+	if l > r {
 		return 1
 	}
-	if hcl < hcr {
+	if l < r {
 		return -1
 	}
-
 	return 0
 }
 
 func newEndpointList(seed int) *endpointList {
 	return &endpointList{
-		d:    skip.New(uint64(0)),
 		seed: seed,
 	}
 }
 
 type endpointList struct {
+	eps  []endpointEntry
 	d    *skip.SkipList
 	seed int
 }
 
 func (e *endpointList) Len() int {
-	return int(e.d.Len())
+	return len(e.eps)
 }
 
 func (e *endpointList) entry(node *remoting.Endpoint) endpointEntry {
@@ -492,79 +489,127 @@ func (e *endpointList) entry(node *remoting.Endpoint) endpointEntry {
 }
 
 func (e *endpointList) Add(node *remoting.Endpoint) {
-	e.d.Insert(e.entry(node))
+	idx := sort.Search(len(e.eps), func(i int) bool {
+		return compareEndpoints(e.eps[i].checksum, epchecksum.Checksum(node, e.seed)) >= 0
+	})
+	if idx == len(e.eps) {
+		e.eps = append(e.eps, e.entry(proto.Clone(node).(*remoting.Endpoint)))
+	} else {
+		e.eps = append(
+			e.eps[:idx],
+			append(
+				[]endpointEntry{e.entry(proto.Clone(node).(*remoting.Endpoint))},
+				e.eps[idx:]...)...)
+
+	}
 }
 
 func (e *endpointList) Remove(node *remoting.Endpoint) {
-	e.d.Delete(e.entry(node))
+	idx := sort.Search(len(e.eps), func(i int) bool {
+		return compareEndpoints(e.eps[i].checksum, epchecksum.Checksum(node, e.seed)) >= 0
+	})
+	if idx < len(e.eps) && e.eps[idx].checksum == epchecksum.Checksum(node, e.seed) {
+		copy(e.eps[idx:], e.eps[idx+1:])
+		e.eps[len(e.eps)-1].endpoint = nil
+		e.eps = e.eps[:len(e.eps)-1]
+	}
 }
 
 func (e *endpointList) Each(iter func(int, *remoting.Endpoint) bool) {
-	it := e.d.IterAtPosition(0)
-	var i int
-	for it.Next() {
-		item := it.Value().(endpointEntry)
-		iter(i, item.endpoint)
-		i++
+	for i, v := range e.eps {
+		if !iter(i, v.endpoint) {
+			break
+		}
 	}
 }
 
 func (e *endpointList) Contains(node *remoting.Endpoint) bool {
-	v := e.d.Get(e.entry(node))
-	return len(v) > 0 && v[0] != nil
+	cs := epchecksum.Checksum(node, e.seed)
+	idx := sort.Search(len(e.eps), func(i int) bool {
+		return compareEndpoints(e.eps[i].checksum, cs) >= 0
+	})
+	return idx < len(e.eps) && e.eps[idx].checksum == cs
 }
 
 func (e *endpointList) Higher(node *remoting.Endpoint) *remoting.Endpoint {
-	v, pos := e.d.GetWithPosition(e.entry(node))
-	if v == nil {
-		return e.d.ByPosition(pos).(endpointEntry).endpoint
+	if len(e.eps) == 0 {
+		return nil
 	}
-	if e.d.Len() == pos+1 {
-		return e.d.ByPosition(0).(endpointEntry).endpoint
+
+	cs := epchecksum.Checksum(node, e.seed)
+	idx := sort.Search(len(e.eps), func(i int) bool {
+		return compareEndpoints(e.eps[i].checksum, cs) > 0
+	})
+
+	if idx < len(e.eps) {
+		return e.eps[idx].endpoint
 	}
-	return e.d.ByPosition(pos + 1).(endpointEntry).endpoint
+	return e.eps[0].endpoint
 }
 
 func (e *endpointList) Lower(node *remoting.Endpoint) *remoting.Endpoint {
-	last := e.d.Len() - 1
-	_, pos := e.d.GetWithPosition(e.entry(node))
-	if pos < 1 {
-		return e.d.ByPosition(last).(endpointEntry).endpoint
+	if len(e.eps) == 0 {
+		return nil
 	}
-	return e.d.ByPosition(pos - 1).(endpointEntry).endpoint
-}
 
-func newNodeIDList() *nodeIDList {
-	return &nodeIDList{
-		list: skip.New(uint64(0)),
+	cs := epchecksum.Checksum(node, e.seed)
+	idx := sort.Search(len(e.eps), func(i int) bool {
+		return compareEndpoints(e.eps[i].checksum, cs) >= 0
+	})
+
+	if idx < len(e.eps) {
+		equals := e.eps[idx].checksum == cs
+		if idx > 0 && equals {
+			return e.eps[idx-1].endpoint
+		} else if !equals {
+			return e.eps[idx].endpoint
+		}
 	}
+	return e.eps[len(e.eps)-1].endpoint
 }
 
-type nodeIDList struct {
-	list *skip.SkipList
+func newNodeIDList() nodeIDList {
+	return nodeIDList{}
 }
 
-func (n *nodeIDList) Len() int {
-	return int(n.list.Len())
+type nodeIDList []*remoting.NodeId
+
+func (n nodeIDList) Less(i, j int) bool {
+	return compareNodeId(n[i], n[j]) < 0
 }
 
-func (n *nodeIDList) Contains(id *remoting.NodeId) bool {
-	v := n.list.Get(nodeIdEntry{id: id})
-	return len(v) > 0 && v[0] != nil
+func (n nodeIDList) Swap(i, j int) {
+	n[i], n[j] = n[j], n[i]
+}
+
+func (n nodeIDList) Len() int {
+	return len(n)
+}
+
+func (n nodeIDList) Contains(id *remoting.NodeId) bool {
+	idx := sort.Search(len(n), func(i int) bool {
+		other := n[i]
+		cmp := compareNodeId(other, id)
+		return cmp >= 0
+	})
+	lnok := idx < len(n)
+	return lnok && proto.Equal(n[idx], id)
 }
 
 func (n *nodeIDList) Add(id *remoting.NodeId) {
-	n.list.Insert(nodeIdEntry{id: id})
+	nn := *n
+	idx := sort.Search(len(nn), func(i int) bool { return compareNodeId(nn[i], id) >= 0 })
+	if idx == len(nn) {
+		*n = append(nn, proto.Clone(id).(*remoting.NodeId))
+	} else {
+		*n = append(nn[:idx], append([]*remoting.NodeId{proto.Clone(id).(*remoting.NodeId)}, nn[idx:]...)...)
+	}
 }
 
-func (n *nodeIDList) Each(iter func(int, *remoting.NodeId) bool) {
-	it := n.list.IterAtPosition(0)
-	var i int
-	for it.Next() {
-		item := it.Value()
-		if !iter(i, item.(nodeIdEntry).id) {
+func (n nodeIDList) Each(iter func(int, *remoting.NodeId) bool) {
+	for i := range n {
+		if !iter(i, n[i]) {
 			break
 		}
-		i++
 	}
 }

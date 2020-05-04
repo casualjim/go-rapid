@@ -1,12 +1,18 @@
 package membership
 
 import (
+	"bytes"
 	"log"
 	"os"
 	"os/signal"
 	"runtime"
+	"sort"
 	"syscall"
 	"testing"
+
+	"github.com/xtgo/set"
+
+	"google.golang.org/protobuf/proto"
 
 	"github.com/casualjim/go-rapid/api"
 
@@ -48,9 +54,13 @@ func TestView_AddOneRing(t *testing.T) {
 		list := vw.GetRing(i)
 		assert.Len(t, list, 1)
 		for _, address := range list {
-			assert.Equal(t, addr, address)
+			requireProtoEqual(t, addr, address)
 		}
 	}
+}
+
+func requireProtoEqual(t testing.TB, l, r proto.Message) {
+	require.Truef(t, proto.Equal(l, r), "expected %s to be equal to %s", l, r)
 }
 
 func TestView_MultipleRingAdditions(t *testing.T) {
@@ -198,16 +208,24 @@ func TestView_MonitoringRelationshipTwoNodes(t *testing.T) {
 	assert.Len(t, toNodeSet(mms), 1)
 }
 
-func toNodeSet(addrs []*remoting.Endpoint) []*remoting.Endpoint {
-	set := make(map[*remoting.Endpoint]struct{})
-	for _, v := range addrs {
-		set[v] = struct{}{}
-	}
-	result := make([]*remoting.Endpoint, 0, len(set))
-	for k := range set {
-		result = append(result, k)
-	}
-	return result
+type nodeSet []*remoting.Endpoint
+
+func (n nodeSet) Len() int {
+	return len(n)
+}
+
+func (n nodeSet) Less(i, j int) bool {
+	return bytes.Compare(n[i].Hostname, n[j].Hostname) < 0 || n[i].Port < n[j].Port
+}
+
+func (n nodeSet) Swap(i, j int) {
+	n[i], n[j] = n[j], n[i]
+}
+
+func toNodeSet(addrs nodeSet) []*remoting.Endpoint {
+	sort.Sort(addrs)
+	n := set.Uniq(addrs)
+	return addrs[:n]
 }
 
 func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
@@ -283,7 +301,7 @@ func TestView_MonitoringRelationshipBootstrap(t *testing.T) {
 	exms := vw.ExpectedObserversOf(joiningNode)
 	require.Len(t, exms, k)
 	require.Len(t, toNodeSet(exms), 1)
-	require.Equal(t, n, exms[0])
+	requireProtoEqual(t, n, exms[0])
 }
 
 func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
