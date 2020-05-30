@@ -14,8 +14,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"google.golang.org/grpc/metadata"
+
 	"google.golang.org/grpc/test/bufconn"
-	"google.golang.org/protobuf/proto"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -32,12 +33,15 @@ import (
 
 func DefaultServerSettings(node api.Node) ServerSettings {
 	return ServerSettings{
-		Settings: DefaultSettings(node),
+		Me:       node,
+		Settings: DefaultSettings(),
 	}
 }
 
 type ServerSettings struct {
 	Settings
+	Me             api.Node
+	Log            zerolog.Logger
 	Certificate    string
 	CertificateKey string
 	ExtraOpts      []grpc.ServerOption
@@ -94,16 +98,19 @@ func (d *Server) SetMembership(svc membershipService) {
 
 func (d *Server) SendRequest(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
 	tn := reflect.Indirect(reflect.ValueOf(req.GetContent())).Type().Name()
-	log := d.Config.Log.With().Str("addr", d.Config.Me.String()).Str("request", tn).Logger()
+	log := zerolog.Ctx(ctx).With().Str("request", tn).Logger()
 	log.Debug().Msg("handling request")
+
 	if d.membership() != nil {
 		log.Debug().Msg("handling with membership service")
-		resp, err := d.membership().Handle(ctx, req)
+		resp, err := d.membership().Handle(EnsureRequestID(ctx), req)
 		if err == context.Canceled {
 			return nil, status.Errorf(codes.Canceled, "cancelled response")
 		}
-		return proto.Clone(resp).(*remoting.RapidResponse), err
+		return resp, err
+		//return proto.Clone(resp).(*remoting.RapidResponse), err
 	}
+
 	/*
 	 * This is a special case which indicates that:
 	 *  1) the system is configured to use a failure detector that relies on Rapid's probe messages
@@ -161,7 +168,7 @@ func (d *Server) Init() error {
 }
 
 func (d *Server) Start() error {
-	log := d.Config.Log
+	log := d.Config.Log.With().Str("component", "grpc").Logger()
 
 	latch := make(chan struct{})
 	go func() {
@@ -313,6 +320,15 @@ func streamLoggerServerInterceptor(logger zerolog.Logger) grpc.StreamServerInter
 }
 
 func newLoggerForCall(ctx context.Context, logger zerolog.Logger, fullMethodString string, start time.Time) context.Context {
+	md, ok := metadata.FromIncomingContext(ctx)
+	var reqID string
+	if ok {
+		cands := md.Get(reqIDHeader)
+		if len(cands) > 0 {
+			reqID = cands[0]
+		}
+	}
+
 	service := path.Dir(fullMethodString)[1:]
 	method := path.Base(fullMethodString)
 	builder := logger.With().
@@ -322,6 +338,10 @@ func newLoggerForCall(ctx context.Context, logger zerolog.Logger, fullMethodStri
 		Str("grpc.method", method).
 		Time("grpc.start_time", start)
 
+	if reqID != "" {
+		builder = builder.Str("request_id", reqID)
+		ctx = context.WithValue(ctx, requestIDKey{}, reqID)
+	}
 	if d, hasDeadline := ctx.Deadline(); hasDeadline {
 		builder = builder.Time("grpc.request.deadline", d)
 	}

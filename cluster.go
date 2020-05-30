@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/casualjim/go-rapid/internal/epchecksum"
+	"github.com/rs/zerolog"
+
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/transport"
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/rs/zerolog"
 
 	"golang.org/x/sync/errgroup"
 
@@ -29,13 +31,13 @@ const (
 	DefaultRetries = 5
 )
 
-func New(addr api.Node, options ...Option) (*Cluster, error) {
+func New(ctx context.Context, addr api.Node, options ...Option) (*Cluster, error) {
 	ts := transport.DefaultServerSettings(addr)
 	c := &Cluster{
+		ctx:                         ctx,
 		k:                           K,
 		l:                           L,
 		h:                           H,
-		log:                         zerolog.Nop(),
 		transportSettings:           &ts,
 		edgeFailureDetector:         edgefailure.PingPong,
 		edgeFailureDetectorInterval: membership.DefaultFailureDetectorInterval,
@@ -78,12 +80,6 @@ func WithListenAddr(addr *remoting.Endpoint, meta map[string]string) Option {
 func WithSeedNodes(addrs ...*remoting.Endpoint) Option {
 	return func(c *Cluster) {
 		c.seeds = addrs
-	}
-}
-
-func WithLogger(log zerolog.Logger) Option {
-	return func(c *Cluster) {
-		c.log = log
 	}
 }
 
@@ -147,7 +143,8 @@ type Cluster struct {
 	h uint32
 	l uint32
 
-	log                         zerolog.Logger
+	ctx context.Context
+
 	members                     *membership.Service
 	server                      *transport.Server
 	client                      *transport.Client
@@ -173,7 +170,7 @@ func (c *Cluster) H() uint32 {
 
 // Members returns the list of endpoints currently in the membership set.
 func (c *Cluster) Members() []*remoting.Endpoint {
-	return c.members.CurrentEndpoints()
+	return c.members.CurrentEndpoints(c.ctxLog())
 }
 
 func (c *Cluster) Size() int {
@@ -189,6 +186,7 @@ func (c *Cluster) Subscribe(evt api.ClusterEvent, sub api.Subscriber) {
 }
 
 func (c *Cluster) initServer() error {
+	c.transportSettings.Log = *zerolog.Ctx(c.ctxLog())
 	if c.transportSettings.ClientCertificate == "" {
 		c.transportSettings.ClientCertificate = c.transportSettings.Certificate
 	}
@@ -256,14 +254,14 @@ func (c *Cluster) startCluster() error {
 	k := int(c.k)
 
 	members := membership.New(
+		c.ctxLog(),
 		c.me,
-		membership.NewMultiNodeCutDetector(c.log, int(c.k), int(c.h), int(c.l)),
+		membership.NewMultiNodeCutDetector(int(c.k), int(c.h), int(c.l)),
 		membership.NewView(k, currentId, addrs),
-		broadcast.UnicastToAll(c.log, c.client),
-		c.edgeFailureDetector(c.log, c.client),
+		broadcast.UnicastToAll(c.client),
+		c.edgeFailureDetector(c.client),
 		c.edgeFailureDetectorInterval,
 		c.client,
-		c.log,
 		&c.subscriptions)
 
 	if err := members.Init(); err != nil {
@@ -280,7 +278,7 @@ func (c *Cluster) startCluster() error {
 func (c *Cluster) joinCluster() error {
 	var err error
 	for _, endpoint := range c.seeds {
-		if er := c.join(endpoint); er != nil {
+		if er := c.join(c.ctxOpLog(), endpoint); er != nil {
 			err = multierror.Append(err, er)
 			continue
 		}
@@ -289,14 +287,28 @@ func (c *Cluster) joinCluster() error {
 	return err
 }
 
-func (c *Cluster) join(endpoint *remoting.Endpoint) error {
+func (c *Cluster) ctxLog() context.Context {
+	l := zerolog.Ctx(c.ctx).With().Str("addr", c.me.String()).Logger()
+	return l.WithContext(c.ctx)
+}
+
+func (c *Cluster) ctxOpLog() context.Context {
+	ctx := transport.EnsureRequestID(c.ctx)
+	opID := transport.RequestIDFromContext(ctx)
+	l := zerolog.Ctx(c.ctx).With().Str("addr", c.me.String()).Str("request_id", opID).Logger()
+	return l.WithContext(ctx)
+}
+
+func (c *Cluster) join(ctx context.Context, endpoint *remoting.Endpoint) error {
 	if err := c.server.Start(); err != nil {
 		return err
 	}
 
+	lg := zerolog.Ctx(ctx)
 	currentID := api.NewNodeId()
+
 	for attempt := 0; attempt < DefaultRetries; attempt++ {
-		err := c.joinAttempt(endpoint, currentID, attempt)
+		err := c.joinAttempt(ctx, endpoint, currentID, attempt)
 		if err == nil {
 			return nil
 		}
@@ -306,35 +318,39 @@ func (c *Cluster) join(endpoint *remoting.Endpoint) error {
 			sender := etp.Resp.Sender
 			switch sc := etp.Resp.StatusCode; sc {
 			case remoting.JoinStatusCode_CONFIG_CHANGED:
-				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
+				lg.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 			case remoting.JoinStatusCode_UUID_ALREADY_IN_RING:
-				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
+				lg.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 				currentID = api.NewNodeId()
 			case remoting.JoinStatusCode_MEMBERSHIP_REJECTED:
-				c.log.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
+				lg.Info().Str("sender", epstr(sender)).Str("code", sc.String()).Msg("retrying")
 			default:
 				return fmt.Errorf("cluster join: unrecognized status code: %s", etp.Resp.StatusCode.String())
 			}
 
 		default:
-			c.log.Err(err).Str("seed", epstr(endpoint)).Msg("join message to seed failed")
+			lg.Err(err).Str("seed", epstr(endpoint)).Msg("join message to seed failed")
 		}
 	}
 
 	// all retries exhausted, bail
-	_ = c.Stop()
+	if serr := c.Stop(); serr != nil {
+		lg.Warn().Err(serr).Msg("stopping cluster after failing to join")
+	}
 	return &ErrJoin{Addr: endpoint}
 }
 
 func epstr(ep *remoting.Endpoint) string { return fmt.Sprintf("%s:%d", ep.GetHostname(), ep.GetPort()) }
 
-func (c *Cluster) joinAttempt(endpoint *remoting.Endpoint, currentID *remoting.NodeId, attempt int) error {
+func (c *Cluster) joinAttempt(ctx context.Context, endpoint *remoting.Endpoint, currentID *remoting.NodeId, attempt int) error {
 	preJoinMessage := &remoting.PreJoinMessage{
 		Sender: c.me.Addr,
 		NodeId: currentID,
 	}
 
-	resp, err := c.client.Do(context.Background(), endpoint, remoting.WrapRequest(preJoinMessage))
+	lg := zerolog.Ctx(ctx)
+
+	resp, err := c.client.Do(ctx, endpoint, remoting.WrapRequest(preJoinMessage))
 	if err != nil {
 		return err
 	}
@@ -359,36 +375,45 @@ func (c *Cluster) joinAttempt(endpoint *remoting.Endpoint, currentID *remoting.N
 	if jr.GetStatusCode() == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
 		configToJoin = -1
 	}
-	c.log.Debug().Str("joiner", c.me.String()).Int64("config", configToJoin).Int("attempt", attempt).Msg("trying to join")
+	lg.Debug().Str("joiner", c.me.String()).Int64("config", configToJoin).Int("attempt", attempt).Msg("trying to join")
 
 	/*
 	 * Phase one complete. Now send a phase two message to all our observers, and if there is a valid
 	 * response, complete starting the cluster by initializing the membership service.
 	 */
-	p2Resp, err := c.sendJoinPhase2Message(jr, configToJoin, currentID)
+	p2Resp, err := c.sendJoinPhase2Message(ctx, jr, configToJoin, currentID)
 	if err != nil {
 		return err
 	}
 	return c.startMembershipServiceFromJoinResponse(p2Resp)
 }
 
-func (c *Cluster) sendJoinPhase2Message(p1Result *remoting.JoinResponse, configToJoin int64, currentID *remoting.NodeId) (*remoting.JoinResponse, error) {
+func (c *Cluster) sendJoinPhase2Message(ctx context.Context, p1Result *remoting.JoinResponse, configToJoin int64, currentID *remoting.NodeId) (*remoting.JoinResponse, error) {
 	observers := p1Result.GetEndpoints()
-	ringNumbersPerObserver := make(map[*remoting.Endpoint][]int32, c.k)
+
+	type ringnumber struct {
+		ep *remoting.Endpoint
+		rn []int32
+	}
+	ringNumbersPerObserver := make(map[uint64]ringnumber, c.k)
 
 	var ringNumber int32
 	for _, observer := range observers {
-		ringNumbersPerObserver[observer] = append(ringNumbersPerObserver[observer], ringNumber)
+		cs := epchecksum.Checksum(observer, 0)
+		ringNumbersPerObserver[cs] = ringnumber{
+			ep: observer,
+			rn: append(ringNumbersPerObserver[cs].rn, ringNumber),
+		}
 		ringNumber++
 	}
 
 	meta := c.me.Meta()
 	addr := c.me.Addr
 
-	g, ctx := errgroup.WithContext(context.Background())
+	g, ctx := errgroup.WithContext(ctx)
 	collector := make(chan *remoting.RapidResponse, len(ringNumbersPerObserver))
-	for key, value := range ringNumbersPerObserver {
-		key, value := key, value
+	for _, value := range ringNumbersPerObserver {
+		key, value := value.ep, value.rn
 
 		// make the requests in parallel
 		g.Go(func() error {
@@ -452,14 +477,14 @@ func (c *Cluster) startMembershipServiceFromJoinResponse(jr *remoting.JoinRespon
 	//}
 
 	members := membership.New(
+		c.ctxLog(),
 		c.me,
-		membership.NewMultiNodeCutDetector(c.log, int(c.k), int(c.h), int(c.l)),
+		membership.NewMultiNodeCutDetector(int(c.k), int(c.h), int(c.l)),
 		membership.NewView(int(c.k), identifiersSeen, allEndpoints),
-		broadcast.UnicastToAll(c.log, c.client),
-		c.edgeFailureDetector(c.log, c.client),
+		broadcast.UnicastToAll(c.client),
+		c.edgeFailureDetector(c.client),
 		c.edgeFailureDetectorInterval,
 		c.client,
-		c.log,
 		&c.subscriptions)
 
 	if err := members.Init(); err != nil {

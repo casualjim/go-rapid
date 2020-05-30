@@ -3,9 +3,10 @@ package edgefailure
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
+
+	"github.com/casualjim/go-rapid/internal/epchecksum"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/rs/zerolog"
@@ -20,16 +21,17 @@ const (
 	bootstrapCountThreshold uint32 = 30
 )
 
-func NewScheduler(factory api.Detector, callback func() api.EdgeFailureCallback, interval time.Duration) *Scheduler {
-	bctx, cancelAll := context.WithCancel(context.Background())
+func NewScheduler(ctx context.Context, factory api.Detector, callback func() api.EdgeFailureCallback, interval time.Duration) *Scheduler {
+	bctx, cancelAll := context.WithCancel(ctx)
 
 	return &Scheduler{
 		factory:     factory,
 		interval:    interval,
 		onFailure:   callback,
 		cancelAll:   cancelAll,
-		detectors:   make(map[*remoting.Endpoint]context.CancelFunc),
-		rootContext: bctx,
+		detectors:   make(map[uint64]context.CancelFunc),
+		baseContext: bctx,
+		rootContext: ctx,
 	}
 }
 
@@ -40,30 +42,33 @@ type Scheduler struct {
 	onFailure func() api.EdgeFailureCallback
 
 	lock      sync.Mutex
-	detectors map[*remoting.Endpoint]context.CancelFunc
+	detectors map[uint64]context.CancelFunc
 	cancelAll context.CancelFunc
 
+	baseContext context.Context
 	rootContext context.Context
 }
 
 func (p *Scheduler) Cancel(endpoint *remoting.Endpoint) {
 	p.lock.Lock()
-	if cancel, found := p.detectors[endpoint]; found {
+	cs := epchecksum.Checksum(endpoint, 0)
+	if cancel, found := p.detectors[cs]; found {
 		cancel()
-		delete(p.detectors, endpoint)
+		delete(p.detectors, cs)
 	}
 	p.lock.Unlock()
 }
 
 func (p *Scheduler) Schedule(endpoint *remoting.Endpoint) {
 	p.lock.Lock()
-	if _, ok := p.detectors[endpoint]; ok {
+	cs := epchecksum.Checksum(endpoint, 0)
+	if _, ok := p.detectors[cs]; ok {
 		p.lock.Unlock()
 		return
 	}
 
-	ctx, cancel := context.WithCancel(p.rootContext)
-	p.detectors[endpoint] = cancel
+	ctx, cancel := context.WithCancel(p.baseContext)
+	p.detectors[cs] = cancel
 	p.lock.Unlock()
 
 	go func(endpoint *remoting.Endpoint) {
@@ -73,7 +78,7 @@ func (p *Scheduler) Schedule(endpoint *remoting.Endpoint) {
 			select {
 			case <-ctx.Done():
 				p.lock.Lock()
-				delete(p.detectors, endpoint)
+				delete(p.detectors, cs)
 				p.lock.Unlock()
 				return
 			case <-time.After(p.interval):
@@ -86,16 +91,14 @@ func (p *Scheduler) Schedule(endpoint *remoting.Endpoint) {
 func (p *Scheduler) CancelAll() {
 	p.lock.Lock()
 	p.cancelAll()
-	p.detectors = make(map[*remoting.Endpoint]context.CancelFunc)
-	p.rootContext, p.cancelAll = context.WithCancel(context.Background())
+	p.detectors = make(map[uint64]context.CancelFunc)
+	p.baseContext, p.cancelAll = context.WithCancel(p.rootContext)
 	p.lock.Unlock()
 }
 
-func PingPong(log zerolog.Logger, client api.Client) api.Detector {
+func PingPong(client api.Client) api.Detector {
 	return api.DetectorFunc(func(endpoint *remoting.Endpoint, callback api.EdgeFailureCallback) api.DetectorJob {
-		lg := log.With().Str("addr", fmt.Sprintf("%s:%d", endpoint.Hostname, endpoint.Port)).Logger()
 		return &pingPongDetector{
-			log:       lg,
 			addr:      endpoint,
 			client:    client,
 			onFailure: callback,
@@ -108,7 +111,6 @@ func PingPong(log zerolog.Logger, client api.Client) api.Detector {
 
 // pingPongDetector uses ping pong messages to detect if edges are down
 type pingPongDetector struct {
-	log    zerolog.Logger
 	client api.Client
 
 	addr         *remoting.Endpoint
@@ -127,32 +129,32 @@ func (p *pingPongDetector) hasFailed() bool {
 // Detect if the specified subject is down
 func (p *pingPongDetector) Detect(ctx context.Context) {
 	if p.hasFailed() && !p.notified {
-		p.onFailure(p.addr)
+		p.onFailure(ctx, p.addr)
 		p.notified = true
 		return
 	}
 
 	resp, err := p.client.DoBestEffort(ctx, p.addr, p.probeMessage)
 	if err != nil {
-		p.handleFailure(p.addr, err)
+		p.handleFailure(ctx, p.addr, err)
 		return
 	}
 
 	if resp == nil {
-		p.handleFailure(p.addr, errors.New("received a nil probe response"))
+		p.handleFailure(ctx, p.addr, errors.New("received a nil probe response"))
 		return
 	}
 
 	if resp.GetProbeResponse().GetStatus() == remoting.NodeStatus_BOOTSTRAPPING {
 		p.bootstrapResponseCount++
 		if p.bootstrapResponseCount > bootstrapCountThreshold {
-			p.handleFailure(p.addr, errors.New("bootstrap count threshold exceeded"))
+			p.handleFailure(ctx, p.addr, errors.New("bootstrap count threshold exceeded"))
 			return
 		}
 	}
 }
 
-func (p *pingPongDetector) handleFailure(subject *remoting.Endpoint, err error) {
+func (p *pingPongDetector) handleFailure(ctx context.Context, subject *remoting.Endpoint, err error) {
 	p.failureCount++
-	p.log.Debug().Err(err).Msg("ping pong probe failed")
+	zerolog.Ctx(ctx).Debug().Err(err).Msg("ping pong probe failed")
 }

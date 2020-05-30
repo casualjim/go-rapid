@@ -1,14 +1,17 @@
 package membership
 
 import (
-	"encoding/binary"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
+	"strconv"
 	"sync"
+	"unsafe"
 
-	"github.com/Workiva/go-datastructures/slice/skip"
+	"github.com/rs/zerolog"
 
 	"google.golang.org/protobuf/proto"
 
@@ -56,22 +59,26 @@ func NewView(k int, nodeIDs []*remoting.NodeId, nodeAddrs []*remoting.Endpoint) 
 	}
 
 	return &View{
-		k:                           k,
-		rings:                       rings,
-		identifiersSeen:             seenIdentifiers,
-		shouldUpdateConfigurationID: true,
+		k:                         k,
+		rings:                     rings,
+		identifiersSeen:           seenIdentifiers,
+		allNodes:                  make(map[uint64]bool, 150),
+		cachedObservers:           make(map[uint64][]*remoting.Endpoint, 150),
+		configurationUpdateReason: "initialize",
 	}
 }
 
 // View hosts K permutations of the memberlist that represent the monitoring
 // relationship between nodes; every node monitors its successor on each ring.
 type View struct {
-	k                           int
-	rings                       []*endpointList
-	lock                        sync.RWMutex
-	identifiersSeen             nodeIDList
-	config                      *Configuration
-	shouldUpdateConfigurationID bool
+	k                         int
+	rings                     []*endpointList
+	lock                      sync.RWMutex
+	identifiersSeen           nodeIDList
+	cachedObservers           map[uint64][]*remoting.Endpoint
+	allNodes                  map[uint64]bool
+	config                    *Configuration
+	configurationUpdateReason string
 }
 
 // IsSafeToJoin queries if a host with a logical identifier is safe to add to the network.
@@ -83,11 +90,15 @@ type View struct {
 // * HOSTNAME_ALREADY_IN_RING when the hostname is already known
 // * UUID_ALREADY_IN_RING when the identifier is already known
 // * SAFE_TO_JOIN when the nde can join the network
-func (v *View) IsSafeToJoin(addr *remoting.Endpoint, id *remoting.NodeId) remoting.JoinStatusCode {
+func (v *View) IsSafeToJoin(ctx context.Context, addr *remoting.Endpoint, id *remoting.NodeId) remoting.JoinStatusCode {
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Str("nodeId", id.String()).Logger()
+	lg.Debug().Msg("entering is safe to join")
+	defer func() { lg.Debug().Msg("leaving is safe to join") }()
+
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if v.isHostPresent(addr) {
+	if v.isHostPresent(lg, addr) {
 		return remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING
 	}
 	if v.isIdentifierPresent(id) {
@@ -97,52 +108,91 @@ func (v *View) IsSafeToJoin(addr *remoting.Endpoint, id *remoting.NodeId) remoti
 }
 
 // RingAdd a node to all K rings and records its unique identifier
-func (v *View) RingAdd(addr *remoting.Endpoint, id *remoting.NodeId) error {
+func (v *View) RingAdd(ctx context.Context, addr *remoting.Endpoint, id *remoting.NodeId) error {
 	if addr == nil {
 		return errors.New("addr should not be nil")
 	}
 	if id == nil {
 		return errors.New("id should not be nil")
 	}
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Str("nodeId", id.String()).Logger()
+	lg.Debug().Msg("entering add to ring")
+	defer func() { lg.Debug().Msg("leaving add to ring") }()
 
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
 	if v.isIdentifierPresent(id) {
+		lg.Debug().Msg("identifier is present")
 		return &UUIDAlreadySeenError{Node: addr, ID: id}
 	}
 
-	if v.isHostPresent(addr) {
+	if v.isHostPresent(lg, addr) {
+		lg.Debug().Msg("address is present")
 		return &NodeAlreadInRingError{Node: addr}
 	}
 
+	cs := epchecksum.Checksum(addr, 0)
+	affectedSubjects := make(map[uint64]bool)
 	for k := 0; k < v.k; k++ {
 		v.rings[k].Add(addr)
+		subj := v.rings[k].Lower(addr)
+		if subj != nil {
+			affectedSubjects[epchecksum.Checksum(subj, 0)] = true
+		}
 	}
 
+	lg.Debug().Str("cs", strconv.FormatUint(cs, 10)).Msg("adding checksum to all nodes")
+	v.allNodes[cs] = true
+	for k := range affectedSubjects {
+		delete(v.cachedObservers, k)
+	}
 	v.identifiersSeen.Add(id)
-	//atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
-	v.shouldUpdateConfigurationID = true
+	//atomic.StoreUint32(&v.configurationUpdateReason, 1)
+	v.configurationUpdateReason = "added new element"
 	return nil
 }
 
 // RingDel a host from all K rings.
-func (v *View) RingDel(addr *remoting.Endpoint) error {
+func (v *View) RingDel(ctx context.Context, addr *remoting.Endpoint) error {
 	if addr == nil {
 		return errors.New("addr should not be nil")
 	}
+	//st := make([]byte, 8192)
+	//runtime.Stack(st, false)
+	//v.log.Debug().Str("stacktrace", string(bytes.Trim(st, "\x00"))).Msg("Deleting item from ring")
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Logger()
+	lg.Debug().Msg("entering delete from ring")
+	defer func() { lg.Debug().Msg("leaving delete from ring") }()
 
 	v.lock.Lock()
 	defer v.lock.Unlock()
-	if !v.isHostPresent(addr) {
+
+	if !v.isHostPresent(lg, addr) {
 		return &NodeNotInRingError{Node: addr}
 	}
+
+	cs := epchecksum.Checksum(addr, 0)
+	affectedSubjects := make(map[uint64]bool)
 	for k := 0; k < v.k; k++ {
-		v.rings[k].Remove(addr)
+		endpoints := v.rings[k]
+
+		oldSubject := endpoints.Lower(addr)
+		if oldSubject != nil {
+			affectedSubjects[epchecksum.Checksum(oldSubject, 0)] = true
+		}
+		endpoints.Remove(addr)
+
+		delete(v.cachedObservers, cs)
 	}
 
-	v.shouldUpdateConfigurationID = true
-	//atomic.StoreUint32(&v.shouldUpdateConfigurationID, 1)
+	delete(v.allNodes, epchecksum.Checksum(addr, 0))
+	for k := range affectedSubjects {
+		delete(v.cachedObservers, k)
+	}
+
+	v.configurationUpdateReason = "deleted element"
+	//atomic.StoreUint32(&v.configurationUpdateReason, 1)
 	return nil
 }
 
@@ -170,19 +220,26 @@ func (v *View) isIdentifierPresent(id *remoting.NodeId) bool {
 }
 
 // IsHostPresent returns whether a host is part of the current membership set or not
-func (v *View) IsHostPresent(addr *remoting.Endpoint) bool {
+func (v *View) IsHostPresent(ctx context.Context, addr *remoting.Endpoint) bool {
 	if addr == nil {
 		return false
 	}
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Logger()
+	lg.Debug().Msg("check if host is present")
 
+	var result bool
+	defer func() { lg.Debug().Bool("result", result).Msg("leaving check if host is present") }()
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	return v.isHostPresent(addr)
+	result = v.isHostPresent(lg, addr)
+	return result
 }
 
-func (v *View) isHostPresent(addr *remoting.Endpoint) bool {
-	return v.rings[0].Contains(addr)
+func (v *View) isHostPresent(lg zerolog.Logger, addr *remoting.Endpoint) bool {
+	cs := epchecksum.Checksum(addr, 0)
+	lg.Debug().Str("cs", strconv.FormatUint(cs, 10)).Msg("checking in all nodes")
+	return v.allNodes[cs]
 }
 
 // ObserversForNode returns the set of observers for the specified node
@@ -191,13 +248,18 @@ func (v *View) ObserversForNode(addr *remoting.Endpoint) ([]*remoting.Endpoint, 
 		return nil, errors.New("addr should not be nil")
 	}
 
-	v.lock.RLock()
-	defer v.lock.RUnlock()
+	v.lock.Lock()
+	defer v.lock.Unlock()
 
-	if !v.isHostPresent(addr) {
+	cs := epchecksum.Checksum(addr, 0)
+	if !v.allNodes[cs] {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
-	return v.observersForNode(addr), nil
+
+	if _, ok := v.cachedObservers[cs]; !ok {
+		v.cachedObservers[cs] = v.observersForNode(addr)
+	}
+	return v.cachedObservers[cs], nil
 }
 
 func (v *View) observersForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
@@ -216,7 +278,7 @@ func (v *View) observersForNode(addr *remoting.Endpoint) []*remoting.Endpoint {
 // ExpectedObserversOf returns the expected monitors of node at addr, even before it is
 // added to the ring. Used during the bootstrap protocol to identify
 // the nodes responsible for gatekeeping a joining peer.
-func (v *View) ExpectedObserversOf(addr *remoting.Endpoint) []*remoting.Endpoint {
+func (v *View) ExpectedObserversOf(ctx context.Context, addr *remoting.Endpoint) []*remoting.Endpoint {
 	if addr == nil {
 		return nil
 	}
@@ -229,18 +291,19 @@ func (v *View) ExpectedObserversOf(addr *remoting.Endpoint) []*remoting.Endpoint
 // KnownOrExpectedObserversFor checks if the node is present,
 // when present it returns the known monitors of node
 // when not present it will return the expected monitors of a node
-func (v *View) KnownOrExpectedObserversFor(addr *remoting.Endpoint) []*remoting.Endpoint {
+func (v *View) KnownOrExpectedObserversFor(ctx context.Context, addr *remoting.Endpoint) []*remoting.Endpoint {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if v.isHostPresent(addr) {
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Logger()
+	if v.isHostPresent(lg, addr) {
 		return v.observersForNode(addr)
 	}
 	return v.predecessorsOf(addr)
 }
 
 // SubjectsOf returns the set of nodes monitored by the specified node
-func (v *View) SubjectsOf(addr *remoting.Endpoint) ([]*remoting.Endpoint, error) {
+func (v *View) SubjectsOf(ctx context.Context, addr *remoting.Endpoint) ([]*remoting.Endpoint, error) {
 	if addr == nil {
 		return nil, errors.New("addr should not be nil")
 	}
@@ -248,7 +311,8 @@ func (v *View) SubjectsOf(addr *remoting.Endpoint) ([]*remoting.Endpoint, error)
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if !v.isHostPresent(addr) {
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Logger()
+	if !v.isHostPresent(lg, addr) {
 		return nil, &NodeNotInRingError{Node: addr}
 	}
 
@@ -271,18 +335,22 @@ func (v *View) predecessorsOf(addr *remoting.Endpoint) []*remoting.Endpoint {
 // edgeStatusFor checks if the node is present.
 // When present it returns the link status as down
 // When not present it return sthe link status as up
-func (v *View) edgeStatusFor(addr *remoting.Endpoint) remoting.EdgeStatus {
+func (v *View) edgeStatusFor(ctx context.Context, addr *remoting.Endpoint) remoting.EdgeStatus {
+	lg := zerolog.Ctx(ctx).With().Str("addr", epStr(addr)).Logger()
+	lg.Debug().Msg("entering edgeStatusFor")
+	defer func() { lg.Debug().Msg("leaving edgeStatusFor") }()
+
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 
-	if v.isHostPresent(addr) {
+	if v.isHostPresent(lg, addr) {
 		return remoting.EdgeStatus_DOWN
 	}
 	return remoting.EdgeStatus_UP
 }
 
 // GetRing gets the list of hosts in the k'th ring.
-func (v *View) GetRing(k int) []*remoting.Endpoint {
+func (v *View) GetRing(ctx context.Context, k int) []*remoting.Endpoint {
 	v.lock.RLock()
 	defer v.lock.RUnlock()
 	return v.getRing(k)
@@ -299,7 +367,7 @@ func (v *View) getRing(k int) []*remoting.Endpoint {
 
 // RingNumbers of a monitor for a given monitoree
 // such that monitoree is a successor of monitor on ring[k].
-func (v *View) RingNumbers(monitor, monitoree *remoting.Endpoint) []int32 {
+func (v *View) RingNumbers(ctx context.Context, monitor, monitoree *remoting.Endpoint) []int32 {
 	if monitor == nil || monitoree == nil {
 		return nil
 	}
@@ -327,21 +395,30 @@ func (v *View) ringNumbers(monitor, monitoree *remoting.Endpoint) []int32 {
 }
 
 // ConfigurationID for the current set of identifiers and nodes
-func (v *View) ConfigurationID() int64 {
-	return v.Configuration().ConfigID
+func (v *View) ConfigurationID(ctx context.Context) int64 {
+	return v.Configuration(ctx).ConfigID
 }
 
 // Configuration object that contains the list of nodes in the membership view
 // as well as the identifiers seen so far. These two lists suffice to bootstrap an
 // identical copy of the MembershipView object.
-func (v *View) Configuration() *Configuration {
+func (v *View) Configuration(ctx context.Context) *Configuration {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	if v.shouldUpdateConfigurationID {
+	if v.configurationUpdateReason != "" {
+		var prev int64
+		if v.config != nil {
+			prev = v.config.ConfigID
+		}
 		newConfig := newConfiguration(v.identifiersSeen, v.rings[0])
 		v.config = newConfig
-		v.shouldUpdateConfigurationID = false
+		zerolog.Ctx(ctx).Debug().
+			Int64("previous_config", prev).
+			Int64("new_config", newConfig.ConfigID).
+			Str("reason", v.configurationUpdateReason).
+			Msg("config update")
+		v.configurationUpdateReason = ""
 	}
 	return v.config
 }
@@ -352,21 +429,20 @@ func newConfiguration(identifiers nodeIDList, nodes *endpointList) *Configuratio
 	var hash uint64 = 1
 	identifiers.Each(func(i int, id *remoting.NodeId) bool {
 		idfs[i] = id
-		lb := make([]byte, 8)
-		hb := make([]byte, 8)
-		binary.LittleEndian.PutUint64(hb, uint64(idfs[i].GetHigh()))
-		binary.LittleEndian.PutUint64(lb, uint64(idfs[i].GetLow()))
-		hash = hash*37 + xxhash.Checksum64(hb)
-		hash = hash*37 + xxhash.Checksum64(lb)
+		hid := id.GetHigh()
+		lid := id.GetLow()
+		hr := reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&hid)), Len: 8, Cap: 8}
+		lr := reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&lid)), Len: 8, Cap: 8}
+		hash = hash*37 + xxhash.Checksum64(*(*[]byte)(unsafe.Pointer(&hr)))
+		hash = hash*37 + xxhash.Checksum64(*(*[]byte)(unsafe.Pointer(&lr)))
 		return true
 	})
 	nds := make([]*remoting.Endpoint, nodes.Len())
 	nodes.Each(func(i int, addr *remoting.Endpoint) bool {
 		nds[i] = addr
 		hash = hash*37 + xxhash.Checksum64(nds[i].Hostname)
-		prt := make([]byte, 4)
-		binary.LittleEndian.PutUint32(prt, uint32(nds[i].Port))
-		hash = hash*37 + xxhash.Checksum64(prt)
+		hdr := reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&nds[i].Port)), Len: 4, Cap: 4}
+		hash = hash*37 + xxhash.Checksum64(*(*[]byte)(unsafe.Pointer(&hdr)))
 		return true
 	})
 
@@ -473,7 +549,6 @@ func newEndpointList(seed int) *endpointList {
 
 type endpointList struct {
 	eps  []endpointEntry
-	d    *skip.SkipList
 	seed int
 }
 

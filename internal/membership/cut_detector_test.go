@@ -1,10 +1,12 @@
 package membership
 
 import (
+	"context"
 	"testing"
 
+	"github.com/casualjim/go-rapid/internal/epchecksum"
+
 	"github.com/casualjim/go-rapid/api"
-	"github.com/rs/zerolog"
 
 	"github.com/google/uuid"
 
@@ -28,13 +30,14 @@ func endpoint(host string, port int) *remoting.Endpoint {
 func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 	t.Parallel()
 
-	b := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	b := NewMultiNodeCutDetector(k, h, l)
 	dst := endpoint("127.0.0.2", 2)
 
 	var ret []*remoting.Endpoint
 	for i := 0; i < h-1; i++ {
 		var e error
-		ret, e = b.AggregateForProposal(createAlertMessage(
+		ret, e = b.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst,
 			remoting.EdgeStatus_UP,
@@ -47,7 +50,7 @@ func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 	}
 
 	var e error
-	ret, e = b.AggregateForProposal(createAlertMessage(
+	ret, e = b.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst,
 		remoting.EdgeStatus_UP,
@@ -62,14 +65,15 @@ func TestMultiNodeCutDetector_Sanity(t *testing.T) {
 func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	wb := NewMultiNodeCutDetector(k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	var ret []*remoting.Endpoint
 	var e error
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
 			remoting.EdgeStatus_UP,
@@ -83,7 +87,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
 			remoting.EdgeStatus_UP,
@@ -96,7 +100,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 
 	}
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
 		remoting.EdgeStatus_UP,
@@ -107,7 +111,7 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
 		remoting.EdgeStatus_UP,
@@ -123,7 +127,8 @@ func TestMultiNodeCutDetector_BlockingOneBlocker(t *testing.T) {
 func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	wb := NewMultiNodeCutDetector(k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -131,7 +136,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	var e error
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
 			remoting.EdgeStatus_UP,
@@ -145,7 +150,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
 			remoting.EdgeStatus_UP,
@@ -159,7 +164,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
 			remoting.EdgeStatus_UP,
@@ -172,7 +177,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 
 	}
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
 		remoting.EdgeStatus_UP,
@@ -183,7 +188,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
 		remoting.EdgeStatus_UP,
@@ -194,7 +199,7 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
 		remoting.EdgeStatus_UP,
@@ -210,7 +215,8 @@ func TestMultiNodeCutDetector_BlockingThreeBlockers(t *testing.T) {
 func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	wb := NewMultiNodeCutDetector(k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -218,7 +224,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	var e error
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
 			remoting.EdgeStatus_UP,
@@ -232,7 +238,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
 			remoting.EdgeStatus_UP,
@@ -246,7 +252,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
 			remoting.EdgeStatus_UP,
@@ -261,14 +267,14 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 
 	// Unlike the previous test, add more reports for
 	// dst1 and dst3 past the H boundary.
-	_, _ = wb.AggregateForProposal(createAlertMessage(
+	_, _ = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
 		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h+1),
 		dst1,
 		remoting.EdgeStatus_UP,
@@ -279,14 +285,14 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	_, _ = wb.AggregateForProposal(createAlertMessage(
+	_, _ = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
 		remoting.EdgeStatus_UP,
 		int32(h-1),
 	))
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h+1),
 		dst3,
 		remoting.EdgeStatus_UP,
@@ -297,7 +303,7 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst2,
 		remoting.EdgeStatus_UP,
@@ -313,7 +319,8 @@ func TestMultiNodeCutDetector_MultipleBlockersPastH(t *testing.T) {
 func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	wb := NewMultiNodeCutDetector(k, h, l)
 	dst1 := endpoint("127.0.0.2", 2)
 	dst2 := endpoint("127.0.0.3", 2)
 	dst3 := endpoint("127.0.0.4", 2)
@@ -321,7 +328,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	var e error
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst1,
 			remoting.EdgeStatus_UP,
@@ -336,7 +343,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 
 	// Unlike the previous test, dst2 has < L updates
 	for i := 0; i < l-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst2,
 			remoting.EdgeStatus_UP,
@@ -350,7 +357,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	}
 
 	for i := 0; i < h-1; i++ {
-		ret, e = wb.AggregateForProposal(createAlertMessage(
+		ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 			endpoint("127.0.0.1", i+1),
 			dst3,
 			remoting.EdgeStatus_UP,
@@ -363,7 +370,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 
 	}
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst1,
 		remoting.EdgeStatus_UP,
@@ -374,7 +381,7 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 	require.Len(t, ret, 0)
 	require.Equal(t, 0, wb.KnownProposals())
 
-	ret, e = wb.AggregateForProposal(createAlertMessage(
+	ret, e = wb.AggregateForProposal(ctx, createAlertMessage(
 		endpoint("127.0.0.1", h),
 		dst3,
 		remoting.EdgeStatus_UP,
@@ -390,7 +397,8 @@ func TestMultiNodeCutDetector_BelowL(t *testing.T) {
 func TestMultiNodeCutDetector_Batch(t *testing.T) {
 	t.Parallel()
 
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	ctx := context.Background()
+	wb := NewMultiNodeCutDetector(k, h, l)
 	const numNodes = 3
 
 	var hostAndPorts []*remoting.Endpoint
@@ -401,7 +409,7 @@ func TestMultiNodeCutDetector_Batch(t *testing.T) {
 	var proposal []*remoting.Endpoint
 	for _, host := range hostAndPorts {
 		for rn := 0; rn < k; rn++ {
-			agg, _ := wb.AggregateForProposal(createAlertMessage(
+			agg, _ := wb.AggregateForProposal(ctx, createAlertMessage(
 				endpoint("127.0.0.1", 1),
 				host,
 				remoting.EdgeStatus_UP,
@@ -416,14 +424,15 @@ func TestMultiNodeCutDetector_Batch(t *testing.T) {
 func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
-	wb := NewMultiNodeCutDetector(zerolog.Nop(), k, h, l)
+	wb := NewMultiNodeCutDetector(k, h, l)
 	const numNodes = 30
 	var hosts []*remoting.Endpoint
 	for i := 0; i < numNodes; i++ {
 		n := endpoint("127.0.0.2", 2+i)
 		hosts = append(hosts, n)
-		require.NoError(t, vw.RingAdd(n, api.NodeIdFromUUID(uuid.New())))
+		require.NoError(t, vw.RingAdd(ctx, n, api.NodeIdFromUUID(uuid.New())))
 	}
 
 	dst := hosts[0]
@@ -434,7 +443,7 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 	var ret []*remoting.Endpoint
 	// This adds alerts from the monitors[0, H - 1) of node dst.
 	for i := 0; i < h-1; i++ {
-		ret, _ = wb.AggregateForProposal(createAlertMessage(
+		ret, _ = wb.AggregateForProposal(ctx, createAlertMessage(
 			monitors[i],
 			dst,
 			remoting.EdgeStatus_DOWN,
@@ -445,14 +454,14 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 	}
 
 	// Next, we add alerts *about* monitors[H, K) of node dst.
-	failedMonitors := make(map[*remoting.Endpoint]struct{}, k-h-1)
+	failedMonitors := make(map[uint64]struct{}, k-h-1)
 	for i := h - 1; i < k; i++ {
 		monitorsOfMonitor, e := vw.ObserversForNode(monitors[i])
 		require.NoError(t, e)
-		failedMonitors[monitors[i]] = struct{}{}
+		failedMonitors[epchecksum.Checksum(monitors[i], 0)] = struct{}{}
 
 		for j := 0; j < k; j++ {
-			ret, _ = wb.AggregateForProposal(createAlertMessage(
+			ret, _ = wb.AggregateForProposal(ctx, createAlertMessage(
 				monitorsOfMonitor[j],
 				monitors[i],
 				remoting.EdgeStatus_DOWN,
@@ -463,12 +472,12 @@ func TestMultiNodeCutDetector_InvalidateFailingLinks(t *testing.T) {
 		}
 	}
 
-	ret, err = wb.InvalidateFailingLinks(vw)
+	ret, err = wb.InvalidateFailingLinks(ctx, vw)
 	require.NoError(t, err)
 	require.Len(t, ret, 4)
 	require.Equal(t, 1, wb.KnownProposals())
 	for _, host := range ret {
-		_, hasFailed := failedMonitors[host]
+		_, hasFailed := failedMonitors[epchecksum.Checksum(host, 0)]
 		require.True(t, hasFailed || host == dst)
 	}
 }

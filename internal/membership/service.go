@@ -9,7 +9,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/encoding/prototext"
+
 	"google.golang.org/protobuf/proto"
 
 	"github.com/nayuta87/queue"
@@ -31,7 +32,7 @@ import (
 
 var (
 	batchingWindow                 = 100 * time.Millisecond
-	DefaultFailureDetectorInterval = 1 * time.Second
+	DefaultFailureDetectorInterval = time.Second
 
 	defaultResponse = &remoting.RapidResponse{
 		Content: &remoting.RapidResponse_ProbeResponse{
@@ -44,6 +45,7 @@ var (
 
 // New creates a new membership service
 func New(
+	ctx context.Context,
 	addr api.Node,
 	cutDetector *MultiNodeCutDetector,
 	view *View,
@@ -51,13 +53,12 @@ func New(
 	failureDetector api.Detector,
 	failureDetectorInterval time.Duration,
 	client api.Client,
-	log zerolog.Logger,
 	subscriptions *EventSubscriptions,
 ) *Service {
 
 	return &Service{
-		log:                     log,
 		me:                      addr,
+		ctx:                     ctx,
 		broadcaster:             bc,
 		view:                    view,
 		client:                  client,
@@ -71,10 +72,11 @@ func New(
 
 // Service that implements the rapid membership protocol
 type Service struct {
-	log               zerolog.Logger
 	view              *View
 	announcedProposal *atomicBool
 	me                api.Node
+
+	ctx context.Context
 
 	updateLock       sync.RWMutex
 	joiners          joinerData
@@ -98,11 +100,11 @@ type Service struct {
 	alertBatcher            *broadcast.AlertBatcher
 }
 
-func (s *Service) CurrentEndpoints() []*remoting.Endpoint {
+func (s *Service) CurrentEndpoints(ctx context.Context) []*remoting.Endpoint {
 	s.updateLock.RLock()
 	defer s.updateLock.RUnlock()
 
-	return s.view.GetRing(0)
+	return s.view.GetRing(ctx, 0)
 }
 
 func (s *Service) Size() int {
@@ -123,22 +125,27 @@ func (s *Service) AddSubscription(evt api.ClusterEvent, sub api.Subscriber) {
 	s.subscriptions.Register(evt, sub)
 }
 
+func (s *Service) ctxLog(ctx context.Context) *zerolog.Logger {
+	lg := zerolog.Ctx(ctx).With().Str("system", "membership").Logger()
+	return &lg
+}
+
 func (s *Service) Init() error {
-	s.log = s.log.With().Str("component", "membership").Str("addr", s.me.String()).Logger()
-	s.log.Debug().Msg("initializing membership service")
+	lg := s.ctxLog(s.ctx)
+	lg.Debug().Msg("initializing membership service")
 
 	s.metadata = node.NewMetadataRegistry()
 	_, _ = s.metadata.Add(s.me.Addr, s.me.Meta())
 
 	s.alertBatcher = broadcast.Alerts(
-		s.log,
+		lg.WithContext(s.ctx),
 		s.me.Addr,
 		s.broadcaster,
 		batchingWindow,
 		0,
 	)
-	s.broadcaster.SetMembership(s.view.GetRing(0))
-	s.joinersToRespond = &joiners{}
+	s.broadcaster.SetMembership(s.view.GetRing(s.ctx, 0))
+	s.joinersToRespond = &joiners{toRespondTo: make(map[uint64]chan chan *remoting.RapidResponse)}
 
 	if s.subscriptions == nil {
 		s.subscriptions = NewEventSubscriptions()
@@ -147,23 +154,24 @@ func (s *Service) Init() error {
 	if interval < time.Millisecond {
 		interval = DefaultFailureDetectorInterval
 	}
-	s.edgeFailures = edgefailure.NewScheduler(s.failureDetector, s.onEdgeFailure, interval)
+	s.edgeFailures = edgefailure.NewScheduler(s.ctx, s.failureDetector, s.onEdgeFailure, interval)
 
 	return nil
 }
 
 func (s *Service) Start() error {
-	s.log.Debug().Msg("starting membership service")
+	lg := s.ctxLog(s.ctx)
+	lg.Debug().Msg("starting membership service")
 	s.broadcaster.Start()
 	s.alertBatcher.Start()
 
 	s.updateLock.Lock()
 	paxosInstance, err := paxos.New(
 		paxos.Address(s.me.Addr),
-		paxos.ConfigurationID(s.view.ConfigurationID()),
+		paxos.ConfigurationID(s.view.ConfigurationID(lg.WithContext(s.ctx))),
 		paxos.MembershipSize(s.view.Size()),
 		paxos.Client(s.client),
-		// paxos.Logger(s.log),
+		// paxolgger(lg),
 		paxos.Broadcaster(s.broadcaster),
 		paxos.OnDecision(s.onDecideViewChange),
 	)
@@ -173,13 +181,13 @@ func (s *Service) Start() error {
 
 	s.paxos.Store(paxosInstance)
 	s.updateLock.Unlock()
-	if err := s.createFailureDetectorsForCurrentConfiguration(); err != nil {
+	if err := s.createFailureDetectorsForCurrentConfiguration(s.ctx); err != nil {
 		return err
 	}
 
-	s.log.Debug().Msg("start: notifying of initial view change")
+	lg.Debug().Msg("start: notifying of initial view change")
 	s.notifyOfInitialViewChange()
-	s.log.Info().Msg("membership service started")
+	lg.Info().Msg("membership service started")
 	return nil
 }
 
@@ -187,19 +195,19 @@ func (s *Service) Stop() {
 	s.edgeFailures.CancelAll()
 	s.alertBatcher.Stop()
 	s.broadcaster.Stop()
-	s.log.Info().Msg("membership service stopped")
+	s.ctxLog(s.ctx).Info().Msg("membership service stopped")
 }
 
 func (s *Service) notifyOfInitialViewChange() {
-	s.log.Debug().Msg("notifying of initial view change")
-	ccid := s.view.ConfigurationID()
+	s.ctxLog(s.ctx).Debug().Msg("notifying of initial view change")
+	ccid := s.view.ConfigurationID(s.ctxLog(s.ctx).WithContext(s.ctx))
 	statusChanges := s.getInitialViewChange()
 	s.subscriptions.Trigger(api.ClusterEventViewChange, ccid, statusChanges)
 }
 
 func (s *Service) getInitialViewChange() []api.StatusChange {
 	res := make([]api.StatusChange, s.view.Size())
-	for i, endpoint := range s.view.GetRing(0) {
+	for i, endpoint := range s.view.GetRing(s.ctx, 0) {
 		res[i] = api.StatusChange{
 			Addr:     endpoint,
 			Status:   remoting.EdgeStatus_UP,
@@ -209,18 +217,22 @@ func (s *Service) getInitialViewChange() []api.StatusChange {
 	return res
 }
 
-func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
-	s.log.Debug().Int("count", len(proposal)).Msg("on decide view change")
+func (s *Service) onDecideViewChange(ctx context.Context, proposal []*remoting.Endpoint) error {
+	lg := zerolog.Ctx(ctx)
+	lg.Debug().Int("count", len(proposal)).Msg("entering on decide view change")
+	defer func() { lg.Debug().Int("count", len(proposal)).Msg("leaving on decide view change") }()
+	s.updateLock.Lock()
 	s.edgeFailures.CancelAll()
 
 	statusChanges := make([]api.StatusChange, 0, len(proposal))
-	s.updateLock.Lock()
+
 	for _, endpoint := range proposal {
 		// If the node is already in the ring, remove it. Else, add it.
 		// XXX: Maybe there's a cleaner way to do this in the future because
 		// this ties us to just two states a node can be in.
-		if s.view.IsHostPresent(endpoint) {
-			if err := s.view.RingDel(endpoint); err != nil {
+		if s.view.IsHostPresent(ctx, endpoint) {
+			lg.Debug().Str("endpoint", endpoint.String()).Msg("removing from ring because host is currently present")
+			if err := s.view.RingDel(ctx, endpoint); err != nil {
 				s.updateLock.Unlock()
 				return err
 			}
@@ -240,7 +252,8 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 		joiner := s.joiners.Del(endpoint)
 		var md *remoting.Metadata
 		if joiner != nil {
-			if err := s.view.RingAdd(endpoint, joiner.NodeID); err != nil {
+			lg.Debug().Str("endpoint", endpoint.String()).Msg("adding to ring")
+			if err := s.view.RingAdd(ctx, endpoint, joiner.NodeID); err != nil {
 				s.updateLock.Unlock()
 				return err
 			}
@@ -260,21 +273,21 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 	}
 	s.updateLock.Unlock()
 
-	ccid := s.view.ConfigurationID()
+	ccid := s.view.ConfigurationID(ctx)
 	// Publish an event to the listeners.
 	s.subscriptions.Trigger(api.ClusterEventViewChange, ccid, statusChanges)
 
 	s.cutDetector.Clear()
 	s.announcedProposal.Set(true, false)
-	//s.log.Debug("**********************************************************************************")
-	//s.log.Debug("REFRESHING PAXOS", zap.Int64("config", ccid))
-	//s.log.Debug("**********************************************************************************")
+	//lg.Debug().Msg("**********************************************************************************")
+	//lg.Debug().Int64("config", ccid).Msg("REFRESHING PAXOS")
+	//lg.Debug().Msg("**********************************************************************************")
 	paxosInstance, err := paxos.New(
 		paxos.Address(s.me.Addr),
 		paxos.ConfigurationID(ccid),
 		paxos.MembershipSize(s.view.Size()),
 		paxos.Client(s.client),
-		// paxos.Logger(s.log),
+		// paxolgger(lg),
 		paxos.Broadcaster(s.broadcaster),
 		paxos.OnDecision(s.onDecideViewChange),
 	)
@@ -282,23 +295,23 @@ func (s *Service) onDecideViewChange(proposal []*remoting.Endpoint) error {
 		return err
 	}
 	s.paxos.Store(paxosInstance)
-	s.broadcaster.SetMembership(s.view.GetRing(0))
+	s.broadcaster.SetMembership(s.view.GetRing(ctx, 0))
 
-	if s.view.IsHostPresent(s.me.Addr) {
-		if err := s.createFailureDetectorsForCurrentConfiguration(); err != nil {
+	if s.view.IsHostPresent(ctx, s.me.Addr) {
+		if err := s.createFailureDetectorsForCurrentConfiguration(ctx); err != nil {
 			return err
 		}
 	} else {
-		s.log.Debug().Msg("Got kicked out and is shutting down")
+		lg.Debug().Msg("Got kicked out and is shutting down")
 		s.subscriptions.Trigger(api.ClusterEventKicked, ccid, statusChanges)
 	}
 
-	return s.respondToJoiners(proposal)
+	return s.respondToJoiners(ctx, proposal)
 }
 
-func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
-	s.log.Debug().Int64("config", s.view.ConfigurationID()).Msg("creating failure detectors for the current Configuration")
-	subjects, err := s.view.SubjectsOf(s.me.Addr)
+func (s *Service) createFailureDetectorsForCurrentConfiguration(ctx context.Context) error {
+	s.ctxLog(ctx).Debug().Int64("config", s.view.ConfigurationID(ctx)).Msg("creating failure detectors for the current Configuration")
+	subjects, err := s.view.SubjectsOf(ctx, s.me.Addr)
 	if err != nil {
 		return err
 	}
@@ -310,8 +323,8 @@ func (s *Service) createFailureDetectorsForCurrentConfiguration() error {
 	return nil
 }
 
-func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
-	config := s.view.Configuration()
+func (s *Service) respondToJoiners(ctx context.Context, proposal []*remoting.Endpoint) error {
+	config := s.view.Configuration(ctx)
 	mdkeys, mdvalues := s.metadata.AllMetadata()
 	response := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
@@ -325,19 +338,20 @@ func (s *Service) respondToJoiners(proposal []*remoting.Endpoint) error {
 
 	for _, node := range proposal {
 		if s.joinersToRespond.Has(node) {
-			resp := remoting.WrapResponse(response)
-			s.joinersToRespond.Deque(node, proto.Clone(resp).(*remoting.RapidResponse))
+			resp := remoting.WrapResponse(proto.Clone(response))
+			s.joinersToRespond.Deque(node, resp)
 		}
 	}
 	return nil
 }
 
 func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
-	configID := s.view.ConfigurationID()
-	return func(endpoint *remoting.Endpoint) {
-		cid := s.view.ConfigurationID()
+	configID := s.view.ConfigurationID(s.ctxLog(s.ctx).WithContext(s.ctx))
+	return func(ctx context.Context, endpoint *remoting.Endpoint) {
+		cid := s.view.ConfigurationID(ctx)
+		lg := s.ctxLog(ctx)
 		if configID != cid {
-			s.log.Debug().
+			lg.Debug().
 				Str("subject", epStr(endpoint)).
 				Int64("old_config", configID).
 				Int64("config", cid).
@@ -345,8 +359,8 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 			return
 		}
 
-		if s.log.Debug().Enabled() {
-			s.log.Debug().
+		if lg.Debug().Enabled() {
+			lg.Debug().
 				Str("subject", epStr(endpoint)).
 				Int64("config", cid).
 				Int("size", s.view.Size()).
@@ -358,10 +372,10 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 			EdgeSrc:         s.me.Addr,
 			EdgeDst:         endpoint,
 			EdgeStatus:      remoting.EdgeStatus_DOWN,
-			RingNumber:      s.view.RingNumbers(s.me.Addr, endpoint),
+			RingNumber:      s.view.RingNumbers(ctx, s.me.Addr, endpoint),
 			ConfigurationId: configID,
 		}
-		s.alertBatcher.Enqueue(msg)
+		s.alertBatcher.Enqueue(ctx, msg)
 	}
 }
 
@@ -387,38 +401,49 @@ func (s *Service) Handle(ctx context.Context, req *remoting.RapidRequest) (*remo
 }
 
 func (s *Service) handlePreJoinMessage(ctx context.Context, req *remoting.PreJoinMessage) (*remoting.RapidResponse, error) {
-	s.log.Debug().Str("sender", epStr(req.GetSender())).Str("node_id", req.GetNodeId().String()).Msg("handling PreJoinMessage")
-	statusCode := s.view.IsSafeToJoin(req.GetSender(), req.GetNodeId())
-	s.log.Debug().Str("status_code", statusCode.String()).Msg("got safe to join")
+	log := zerolog.Ctx(ctx)
+	log.Debug().Str("sender", epStr(req.GetSender())).Str("node_id", req.GetNodeId().String()).Msg("handling PreJoinMessage")
+	defer func() {
+		log.Debug().Str("sender", epStr(req.GetSender())).Str("node_id", req.GetNodeId().String()).Msg("finished handling PreJoinMessage")
+	}()
+	statusCode := s.view.IsSafeToJoin(ctx, req.GetSender(), req.GetNodeId())
+	log.Debug().Str("status_code", statusCode.String()).Msg("got safe to join")
 
 	var endpoints []*remoting.Endpoint
 	if statusCode == remoting.JoinStatusCode_SAFE_TO_JOIN || statusCode == remoting.JoinStatusCode_HOSTNAME_ALREADY_IN_RING {
-		observers := s.view.ExpectedObserversOf(req.GetSender())
+		observers := s.view.ExpectedObserversOf(ctx, req.GetSender())
 		endpoints = append(endpoints, observers...)
 	}
 
-	s.log.Debug().Str("status_code", statusCode.String()).Int("observers", len(endpoints)).Msg("collected the observers")
+	log.Debug().Str("status_code", statusCode.String()).Int("observers", len(endpoints)).Msg("collected the observers")
 	return remoting.WrapResponse(&remoting.JoinResponse{
 		Sender:          s.me.Addr,
-		ConfigurationId: s.view.ConfigurationID(),
+		ConfigurationId: s.view.ConfigurationID(ctx),
 		StatusCode:      statusCode,
 		Endpoints:       endpoints,
 	}), nil
 }
 
 func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessage) (*remoting.RapidResponse, error) {
-	ccid := s.view.ConfigurationID()
+	ccid := s.view.ConfigurationID(ctx)
+	log := zerolog.Ctx(ctx).With().
+		Str("sender", epStr(req.GetSender())).
+		Str("node_id", req.GetNodeId().String()).
+		Int64("config", ccid).
+		Int("size", s.view.Size()).
+		Logger()
+	log.Debug().Msg("handling JoinMessage")
+	defer func() {
+		log.Debug().Msg("finished handling JoinMessage")
+	}()
+
 	if ccid == req.GetConfigurationId() {
-		s.log.Debug().
-			Str("sender", epStr(req.GetSender())).
-			Int64("config", ccid).
-			Int("size", s.view.Size()).
-			Msg("enqueueing SAFE_TO_JOIN")
+		log.Debug().Msg("enqueueing SAFE_TO_JOIN")
 
 		fut := make(chan *remoting.RapidResponse)
 		s.joinersToRespond.GetOrAdd(req.GetSender(), fut)
 
-		s.alertBatcher.Enqueue(&remoting.AlertMessage{
+		s.alertBatcher.Enqueue(ctx, &remoting.AlertMessage{
 			EdgeSrc:         s.me.Addr,
 			EdgeDst:         req.GetSender(),
 			EdgeStatus:      remoting.EdgeStatus_UP,
@@ -436,14 +461,11 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		}
 	}
 
-	s.log.Info().
-		Str("sender", epStr(req.GetSender())).
-		Int64("config", ccid).
+	log.Info().
 		Int64("proposed", req.GetConfigurationId()).
-		Int("size", s.view.Size()).
-		Interface("view", s.view.GetRing(0)).
-		Msg("Wrong configuration")
-	config := s.view.Configuration()
+		Interface("view", s.view.GetRing(ctx, 0)).
+		Msg("configuration mismatch")
+	config := s.view.Configuration(ctx)
 
 	resp := &remoting.JoinResponse{
 		Sender:          s.me.Addr,
@@ -451,13 +473,10 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		StatusCode:      remoting.JoinStatusCode_CONFIG_CHANGED,
 	}
 
-	if s.view.IsHostPresent(req.GetSender()) && s.view.IsIdentifierPresent(req.GetNodeId()) {
-		s.log.Info().
-			Str("sender", epStr(req.GetSender())).
-			Int64("current_config", ccid).
-			Int64("config", config.ConfigID).
+	if s.view.IsHostPresent(ctx, req.GetSender()) && s.view.IsIdentifierPresent(req.GetNodeId()) {
+		log.Info().
+			Int64("current_config", config.ConfigID).
 			Int64("proposed", req.GetConfigurationId()).
-			Int("size", s.view.Size()).
 			Msg("Joining host that's already present")
 
 		resp.StatusCode = remoting.JoinStatusCode_SAFE_TO_JOIN
@@ -465,11 +484,8 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 		resp.Identifiers = config.Identifiers
 		resp.MetadataKeys, resp.MetadataValues = s.metadata.AllMetadata()
 	} else {
-		s.log.Info().
-			Str("sender", epStr(req.GetSender())).
-			Int64("current_config", ccid).
-			Int64("config", config.ConfigID).
-			Int("size", s.view.Size()).
+		log.Info().
+			Int64("current_config", config.ConfigID).
 			Msg("returning CONFIG_CHANGED")
 	}
 
@@ -477,20 +493,27 @@ func (s *Service) handleJoinMessage(ctx context.Context, req *remoting.JoinMessa
 }
 
 func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.BatchedAlertMessage) (*remoting.RapidResponse, error) {
-	s.log.Debug().Str("batch", protojson.Format(req)).Msg("handling batched alert message")
+	log := zerolog.Ctx(ctx)
+	log.Debug().Str("batch", prototext.Format(req)).Msg("handling batched alert message")
+	defer func() {
+		log.Debug().Str("batch", prototext.Format(req)).Msg("finished handling batched alert message")
+	}()
 	if s.announcedProposal.Value() {
-		s.log.Debug().Msg("replying with default response, because already announced")
+		log.Debug().Msg("replying with default response, because already announced")
+
 		return defaultResponse, nil
+	} else {
+		log.Warn().Msg("The proposal has not yet been announced")
 	}
 
-	ccid := s.view.ConfigurationID()
+	ccid := s.view.ConfigurationID(ctx)
 	memSize := s.view.Size()
 	endpoints := &endpointSet{
 		data: make(map[uint64]*remoting.Endpoint),
 	}
-	s.log.Debug().Msg("preparing proposal for join")
+	log.Debug().Msg("preparing proposal announcement for join")
 	for _, msg := range req.GetMessages() {
-		if !s.filterAlertMessage(req, msg, memSize, ccid) {
+		if !s.filterAlertMessage(ctx, req, msg, memSize, ccid) {
 			continue
 		}
 
@@ -504,35 +527,38 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 			)
 		}
 
-		proposal, err := s.cutDetector.AggregateForProposal(msg)
+		proposal, err := s.cutDetector.AggregateForProposal(ctx, msg)
 		if err != nil {
 			return nil, err
 		}
 		endpoints.AddAll(proposal)
 	}
 
-	s.log.Debug().Str("endpoints", epStr(endpoints.Values()...)).Msg("invalidating failing links in the view")
-	failing, err := s.cutDetector.InvalidateFailingLinks(s.view)
+	proposal := endpoints.Values()
+	lg := log.With().Str("endpoints", epStr(proposal...)).Logger()
+	log = &lg
+	log.Debug().Msg("invalidating failing links in the view")
+	failing, err := s.cutDetector.InvalidateFailingLinks(ctx, s.view)
 	if err != nil {
 		return nil, err
 	}
 	endpoints.AddAll(failing)
 
 	if endpoints.Len() == 0 {
-		s.log.Debug().Str("endpoints", epStr(endpoints.Values()...)).Msg("returning default response because there are no endpoints in the proposal")
+		log.Debug().Msg("returning default response because there are no endpoints in the proposal")
 		return defaultResponse, nil
 	}
 
-	s.log.Debug().Msg("announcing proposal")
+	log.Debug().Msg("announcing proposal")
 	s.announcedProposal.Set(false, true)
-	proposal := endpoints.Values()
+
 	var nodeStatusChangeList []api.StatusChange
 	q := s.subscriptions.get(api.ClusterEventViewChangeProposal)
 
 	if q != nil {
 		firstItem := q.Deq()
 		if firstItem != nil {
-			nodeStatusChangeList = s.createNodeStatusChangeList(proposal)
+			nodeStatusChangeList = s.createNodeStatusChangeList(ctx, proposal)
 		}
 		for v := firstItem; v != nil; v = q.Deq() {
 			v.(api.Subscriber).OnNodeStatusChange(ccid, nodeStatusChangeList)
@@ -543,11 +569,11 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	return defaultResponse, nil
 }
 
-func (s *Service) createNodeStatusChangeList(proposal []*remoting.Endpoint) []api.StatusChange {
+func (s *Service) createNodeStatusChangeList(ctx context.Context, proposal []*remoting.Endpoint) []api.StatusChange {
 	list := make([]api.StatusChange, len(proposal))
 	for i, p := range proposal {
 		status := remoting.EdgeStatus_UP
-		if s.view.IsHostPresent(p) {
+		if s.view.IsHostPresent(ctx, p) {
 			status = remoting.EdgeStatus_DOWN
 		}
 
@@ -561,9 +587,10 @@ func (s *Service) createNodeStatusChangeList(proposal []*remoting.Endpoint) []ap
 	return list
 }
 
-func (s *Service) filterAlertMessage(batched *remoting.BatchedAlertMessage, msg *remoting.AlertMessage, memSize int, ccid int64) bool {
+func (s *Service) filterAlertMessage(ctx context.Context, batched *remoting.BatchedAlertMessage, msg *remoting.AlertMessage, memSize int, ccid int64) bool {
 	dest := msg.GetEdgeDst()
-	log := s.log.With().Str("dest", epStr(dest)).Int64("config", ccid).Logger()
+
+	log := s.ctxLog(ctx).With().Str("sender", epStr(batched.Sender)).Str("dest", epStr(dest)).Int64("config", ccid).Logger()
 	log.Debug().Int("size", memSize).Str("status", msg.GetEdgeStatus().String()).Msg("alert message received")
 
 	if ccid != msg.GetConfigurationId() {
@@ -571,12 +598,12 @@ func (s *Service) filterAlertMessage(batched *remoting.BatchedAlertMessage, msg 
 		return false
 	}
 
-	if msg.GetEdgeStatus() == remoting.EdgeStatus_UP && s.view.IsHostPresent(dest) {
+	if msg.GetEdgeStatus() == remoting.EdgeStatus_UP && s.view.IsHostPresent(ctx, dest) {
 		log.Debug().Msg("alert message with status UP received")
 		return false
 	}
 
-	if msg.GetEdgeStatus() == remoting.EdgeStatus_DOWN && !s.view.IsHostPresent(dest) {
+	if msg.GetEdgeStatus() == remoting.EdgeStatus_DOWN && !s.view.IsHostPresent(ctx, dest) {
 		log.Debug().Msg("alert message with status DOWN received, already in Configuration")
 		return false
 	}
@@ -673,8 +700,9 @@ func epStr(eps ...*remoting.Endpoint) string {
 }
 
 type joiners struct {
-	// toRespondTo map[uint64]chan chan *remoting.RapidResponse
-	data sync.Map
+	lock        sync.Mutex
+	toRespondTo map[uint64]chan chan *remoting.RapidResponse
+	//data sync.Map
 }
 
 func (j *joiners) key(ep *remoting.Endpoint) uint64 {
@@ -683,50 +711,47 @@ func (j *joiners) key(ep *remoting.Endpoint) uint64 {
 
 func (j *joiners) GetOrAdd(key *remoting.Endpoint, fut chan *remoting.RapidResponse) {
 	var res chan chan *remoting.RapidResponse
-	// j.lock.Lock()
+	j.lock.Lock()
+	defer j.lock.Unlock()
 
 	k := j.key(key)
-	if v, ok := j.data.Load(k); !ok {
+	if v, ok := j.toRespondTo[k]; !ok {
 		res = make(chan chan *remoting.RapidResponse, 500)
-		j.data.Store(k, res)
+		j.toRespondTo[k] = res
 	} else {
-		res = v.(chan chan *remoting.RapidResponse)
+		res = v
 	}
-	// j.lock.Unlock()
 
 	res <- fut
 }
 
 func (j *joiners) Enqueue(key *remoting.Endpoint, resp chan *remoting.RapidResponse) {
-	// j.lock.Lock()
-
-	if q, ok := j.data.Load(j.key(key)); ok {
-		ch := q.(chan chan *remoting.RapidResponse)
+	j.lock.Lock()
+	if ch, ok := j.toRespondTo[j.key(key)]; ok {
 		ch <- resp
 	}
-	// j.lock.Unlock()
+	j.lock.Unlock()
 }
 
 func (j *joiners) Deque(key *remoting.Endpoint, resp *remoting.RapidResponse) {
-	// j.lock.Lock()
+	j.lock.Lock()
 	k := j.key(key)
 
-	if cc, ok := j.data.Load(k); ok {
-		ch := cc.(chan chan *remoting.RapidResponse)
-		j.data.Delete(k)
+	if ch, ok := j.toRespondTo[k]; ok {
+		delete(j.toRespondTo, k)
 		close(ch)
 		for f := range ch {
 			f <- resp
 			close(f)
 		}
 	}
-	// j.lock.Unlock()
+	j.lock.Unlock()
 }
 
 func (j *joiners) Has(key *remoting.Endpoint) bool {
-
-	_, ok := j.data.Load(j.key(key))
-	// j.lock.Unlock()
+	j.lock.Lock()
+	_, ok := j.toRespondTo[j.key(key)]
+	j.lock.Unlock()
 	return ok
 }
 

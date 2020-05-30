@@ -4,18 +4,23 @@ import (
 	"context"
 	"time"
 
+	"google.golang.org/protobuf/encoding/prototext"
+
+	"github.com/xtgo/set"
+
+	"github.com/casualjim/go-rapid/internal/transport"
+
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/rs/zerolog"
-	"google.golang.org/protobuf/encoding/protojson"
 )
 
 // Alerts to send batch updates
-func Alerts(log zerolog.Logger, addr *remoting.Endpoint, bc Broadcaster, interval time.Duration, maxSize int) *AlertBatcher {
+func Alerts(ctx context.Context, addr *remoting.Endpoint, bc Broadcaster, interval time.Duration, maxSize int) *AlertBatcher {
 	stopSignal := make(chan chan struct{})
-	queue := make(chan *remoting.AlertMessage, 500)
+	queue := make(chan alertMessage, 500)
 
 	sch := &AlertBatcher{
-		log:      log,
+		ctx:      ctx,
 		addr:     addr,
 		bc:       bc,
 		maxSize:  maxSize,
@@ -27,15 +32,20 @@ func Alerts(log zerolog.Logger, addr *remoting.Endpoint, bc Broadcaster, interva
 	return sch
 }
 
+type alertMessage struct {
+	msg     *remoting.AlertMessage
+	trigger string
+}
+
 // AlertBatcher allow for stopping a broadcast batch loop or enqueueing messages to it
 type AlertBatcher struct {
-	log      zerolog.Logger
+	ctx      context.Context
 	addr     *remoting.Endpoint
 	bc       Broadcaster
 	interval time.Duration
 	maxSize  int
 	stop     chan chan struct{}
-	queue    chan *remoting.AlertMessage
+	queue    chan alertMessage
 }
 
 // CancelAll the scheduled broadcasts
@@ -48,8 +58,11 @@ func (s *AlertBatcher) Stop() {
 }
 
 // Enqueue a message for broadcasting
-func (s *AlertBatcher) Enqueue(msg *remoting.AlertMessage) {
-	s.queue <- msg
+func (s *AlertBatcher) Enqueue(ctx context.Context, msg *remoting.AlertMessage) {
+	s.queue <- alertMessage{
+		msg:     msg,
+		trigger: transport.RequestIDFromContext(ctx),
+	}
 }
 
 // Start batching alerts
@@ -57,7 +70,7 @@ func (s *AlertBatcher) Start() {
 	latch := make(chan struct{})
 	go func() {
 		close(latch)
-		var msgs []*remoting.AlertMessage
+		var msgs []alertMessage
 		for {
 			select {
 			case <-time.After(s.interval): // regularly scheduled broadcasting
@@ -80,16 +93,31 @@ func (s *AlertBatcher) Start() {
 	<-latch
 }
 
-func (s *AlertBatcher) sendBatch(msgs []*remoting.AlertMessage) {
-	if len(msgs) == 0 {
+func (s *AlertBatcher) sendBatch(alerts []alertMessage) {
+	if len(alerts) == 0 {
 		return
 	}
 
-	s.log.Info().Int("size", len(msgs)).Msg("sending alert batch")
+	msgs := make([]*remoting.AlertMessage, len(alerts))
+	var triggers []string
+	for i := range alerts {
+		msgs[i] = alerts[i].msg
+		triggers = set.StringsDo(set.Union, triggers, alerts[i].trigger)
+	}
+
+	l := zerolog.Ctx(s.ctx).With().Int("size", len(msgs)).Strs("triggers", triggers)
+	if len(triggers) == 1 {
+		l = l.Str("request_id", triggers[0])
+	}
+	lg := l.Logger()
+	lg.Info().Msg("sending alert batch")
 	req := &remoting.BatchedAlertMessage{
 		Sender:   s.addr,
 		Messages: msgs,
 	}
-	s.log.Debug().Str("batch", protojson.Format(req)).Msg("batched messages")
-	s.bc.Broadcast(context.Background(), remoting.WrapRequest(req))
+
+	bctx := transport.CreateNewRequestID(s.ctx)
+	nlg := lg.With().Str("request_id", transport.RequestIDFromContext(bctx)).Logger()
+	nlg.Debug().Str("batch", prototext.Format(req)).Msg("batched messages")
+	s.bc.Broadcast(nlg.WithContext(bctx), remoting.WrapRequest(req))
 }

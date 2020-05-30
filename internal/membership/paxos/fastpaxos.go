@@ -9,26 +9,27 @@ import (
 	"sync/atomic"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
-	"github.com/rs/zerolog"
+	"github.com/casualjim/go-rapid/internal/transport"
+	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/casualjim/go-rapid/remoting"
+	"github.com/rs/zerolog"
 )
 
 const (
 	defaultBaseDelay = time.Second
 )
 
-func DeferBy(startIn time.Duration, task func()) func() {
-	ctx, cancel := context.WithCancel(context.Background())
+func DeferBy(ctx context.Context, startIn time.Duration, task func(context.Context)) func() {
+	ctx, cancel := context.WithCancel(ctx)
 	go func() {
+		timer := time.NewTimer(startIn)
 		select {
-		case <-time.After(startIn):
-			task()
+		case <-timer.C:
+			task(ctx)
 		case <-ctx.Done():
-
+			timer.Stop()
 		}
 	}()
 	return cancel
@@ -37,7 +38,6 @@ func DeferBy(startIn time.Duration, task func()) func() {
 // New classic consensus protocol
 func New(opts ...Option) (*Fast, error) {
 	var c config
-	c.log = zerolog.Nop()
 	c.consensusFallbackTimeoutBaseDelay = defaultBaseDelay
 	for _, apply := range opts {
 		apply(&c)
@@ -47,7 +47,6 @@ func New(opts ...Option) (*Fast, error) {
 		return nil, err
 	}
 
-	c.log = c.log.With().Str("addr", endpointStr(c.myAddr)).Logger()
 	// The rate of a random expovariate variable, used to determine a jitter over a base delay to start classic
 	// rounds. This determines how many classic rounds we want to start per second on average. Does not
 	// affect correctness of the protocol, but having too many nodes starting rounds will increase messaging load,
@@ -62,12 +61,12 @@ func New(opts ...Option) (*Fast, error) {
 		cancelClassic: func() {},
 	}
 
-	c.onDecide = func(endpoints []*remoting.Endpoint) error {
+	c.onDecide = func(ctx context.Context, endpoints []*remoting.Endpoint) error {
 		if atomic.CompareAndSwapInt32(&cons.decided, 0, 1) {
 			cons.cancelLock.Lock()
 			cons.cancelClassic()
 			cons.cancelLock.Unlock()
-			return cons.onDecide(endpoints)
+			return cons.onDecide(ctx, endpoints)
 		}
 		return nil
 	}
@@ -106,49 +105,52 @@ type Fast struct {
 // when recoverydelay is 0, it will use a random recovery delay
 func (f *Fast) Propose(ctx context.Context, vote []*remoting.Endpoint, recoveryDelay time.Duration) {
 	f.paxosLock.Lock()
-	f.classic.registerFastRoundVote(vote)
+	f.classic.registerFastRoundVote(ctx, vote)
 	f.paxosLock.Unlock()
 
+	lg := zerolog.Ctx(ctx)
 	req := &remoting.FastRoundPhase2BMessage{
 		Endpoints:       vote,
 		Sender:          f.myAddr,
-		ConfigurationId: int64(f.configurationID),
+		ConfigurationId: f.configurationID,
 	}
-	f.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
+
+	f.broadcaster.Broadcast(transport.CreateNewRequestID(ctx), remoting.WrapRequest(req))
 
 	if recoveryDelay == 0 {
 		recoveryDelay = f.randomDelay()
 	}
 
-	f.log.Debug().Dur("delay", recoveryDelay).Msg("scheduling classic round fallback")
+	lg.Debug().Dur("delay", recoveryDelay).Msg("scheduling classic round fallback")
 
 	f.cancelLock.Lock()
 	f.cancelClassic()
-	f.cancelClassic = DeferBy(recoveryDelay, f.startClassicPaxosRound)
+	f.cancelClassic = DeferBy(ctx, recoveryDelay, f.startClassicPaxosRound)
 	f.cancelLock.Unlock()
 }
 
-func (f *Fast) startClassicPaxosRound() {
-	f.log.Debug().Msg("recovery delay lapsed, starting classic paxos round")
+func (f *Fast) startClassicPaxosRound(ctx context.Context) {
+	zerolog.Ctx(ctx).Debug().Msg("recovery delay lapsed, starting classic paxos round")
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
 	f.paxosLock.Lock()
-	f.classic.startPhase1a(context.Background(), 2)
+	f.classic.startPhase1a(ctx, 2)
 	f.paxosLock.Unlock()
 }
 
 // Invoked by the membership service when it receives a proposal for a fast round.
 func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRoundPhase2BMessage) {
-	if int64(f.configurationID) != msg.GetConfigurationId() {
-		f.log.Debug().
+	lg := zerolog.Ctx(ctx)
+	if f.configurationID != msg.GetConfigurationId() {
+		lg.Debug().
 			Int64("current", f.configurationID).
 			Int64("proposal", msg.GetConfigurationId()).
 			Msg("settings id mismatch for proposal.")
 		return
 	}
 
-	f.log.Debug().Str("req", protojson.Format(msg)).Msg("handling fast round proposal")
+	lg.Debug().Str("req", prototext.Format(msg)).Msg("handling fast round proposal")
 	if atomic.LoadInt32(&f.decided) == 1 {
 		return
 	}
@@ -164,7 +166,7 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 	quorumSize := f.membershipSize - maxFaults
 
 	if f.votesReceived.Len() < quorumSize {
-		f.log.Debug().
+		lg.Debug().
 			Int("count", count).
 			Int("votes_received", f.votesReceived.Len()).
 			Int("membership_size", f.membershipSize).
@@ -172,7 +174,7 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 			Msg("fast round bailing")
 		return
 	}
-	f.log.Debug().
+	lg.Debug().
 		Int("count", count).
 		Int("membership_size", f.membershipSize).
 		Int("quorumSize", quorumSize).
@@ -180,14 +182,14 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 		Msg("fast round deciding")
 
 	if count >= quorumSize {
-		f.log.Debug().Str("endpoints", endpointsStr(msg.GetEndpoints())).Msg("decided on a view change")
+		lg.Debug().Str("endpoints", endpointsStr(msg.GetEndpoints())).Msg("decided on a view change")
 		// We have a successful proposal. Consume it.
-		if err := f.onDecide(msg.GetEndpoints()); err != nil {
-			f.log.Err(err).Msg("classic: failed to notify of view change")
+		if err := f.onDecide(ctx, msg.GetEndpoints()); err != nil {
+			lg.Err(err).Msg("classic: failed to notify of view change")
 		}
 	} else {
 		// fallback protocol here
-		f.log.Debug().
+		lg.Debug().
 			Int("count", count).
 			Int("membership_size", f.membershipSize).
 			Int("quorumSize", quorumSize).
@@ -198,7 +200,7 @@ func (f *Fast) handleFastRoundProposal(ctx context.Context, msg *remoting.FastRo
 
 // Handle a rapid request
 func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
-	f.log.Debug().Str("type", fmt.Sprintf("%T", req.GetContent())).Msg("handling paxos message")
+	zerolog.Ctx(ctx).Debug().Str("type", fmt.Sprintf("%T", req.GetContent())).Msg("handling paxos message")
 	switch req.Content.(type) {
 	case *remoting.RapidRequest_FastRoundPhase2BMessage:
 		f.handleFastRoundProposal(ctx, req.GetFastRoundPhase2BMessage())
@@ -219,8 +221,10 @@ func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remotin
 
 var defaultResponse = &remoting.RapidResponse{}
 
+var rnd = rand.New(rand.NewSource(time.Now().Unix()))
+
 func (f *Fast) randomDelay() time.Duration {
-	jitter := time.Duration(-float64(time.Second) * math.Log(1-rand.Float64()) / f.jitterRate)
+	jitter := time.Duration(-float64(time.Second) * (math.Log(1-rnd.Float64()) * float64(time.Second)) / f.jitterRate)
 	return jitter + f.consensusFallbackTimeoutBaseDelay
 }
 

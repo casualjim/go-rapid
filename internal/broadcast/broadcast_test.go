@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/casualjim/go-rapid/mocks"
@@ -39,7 +38,7 @@ func TestUnicastAll_Broadcast(t *testing.T) {
 		wg.Done()
 	})
 
-	broadcast := UnicastToAll(zerolog.Nop(), client)
+	broadcast := UnicastToAll(client)
 	broadcast.Start()
 	defer broadcast.Stop()
 
@@ -57,7 +56,7 @@ func TestUnicastAll_SetMembership(t *testing.T) {
 	members := []*remoting.Endpoint{addr1, addr2, addr3}
 
 	client := &mocks.Client{}
-	uc := Unicast(zerolog.Nop(), client, MatchAll)
+	uc := Unicast(client, MatchAll)
 	uc.Start()
 	defer uc.Stop()
 

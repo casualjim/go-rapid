@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Workiva/go-datastructures/trie/ctrie"
+
 	"github.com/cornelk/hashmap"
 	"github.com/rs/zerolog"
 
@@ -75,7 +77,8 @@ func (p *paxosSuite) createNFastPaxosInstances(numNodes int, onDecide api.Endpoi
 	// p.Require().NoError(err)
 	lg := zerolog.Nop()
 
-	creg := &ConsensusRegistry{data: hashmap.New(uintptr(numNodes))}
+	//creg := &ConsensusRegistry{data: hashmap.New(uintptr(numNodes))}
+	creg := &ConsensusRegistry{data: ctrie.New(nil)}
 	client := &DirectClient{paxosInstances: creg}
 	broadcaster := &DirectBroadcaster{
 		log:            lg,
@@ -93,7 +96,6 @@ func (p *paxosSuite) createNFastPaxosInstances(numNodes int, onDecide api.Endpoi
 			ConfigurationID(1),
 			MembershipSize(numNodes),
 			OnDecision(onDecide),
-			Logger(lg),
 		)
 		p.Require().NoError(err)
 		creg.Set(addr, consensus)
@@ -179,7 +181,7 @@ func (p *paxosSuite) TestCoordinatorRuleSameRank() {
 				validProposals[makeVvalID(tc.Proposals[k])] = true
 			}
 			for iterations := 0; iterations < 100; iterations++ {
-				onDecide := api.EndpointsFunc(func(_ []*remoting.Endpoint) error { return nil })
+				onDecide := api.EndpointsFunc(func(_ context.Context, _ []*remoting.Endpoint) error { return nil })
 				addr := &remoting.Endpoint{Hostname: localhostb, Port: 1234}
 				paxos, err := NewClassic(
 					Address(addr),
@@ -241,7 +243,7 @@ func (p *paxosSuite) TestCoordinatorRule() {
 				validProposals[makeVvalID(tc.Proposals[k])] = true
 			}
 			for iterations := 0; iterations < 100; iterations++ {
-				onDecide := api.EndpointsFunc(func(_ []*remoting.Endpoint) error { return nil })
+				onDecide := api.EndpointsFunc(func(_ context.Context, _ []*remoting.Endpoint) error { return nil })
 				addr := &remoting.Endpoint{Hostname: localhostb, Port: 1234}
 				paxos, err := NewClassic(
 					Address(addr),
@@ -350,7 +352,7 @@ func (p *paxosSuite) TestRecoveryForSinglePropose() {
 			decisions := make(chan []*remoting.Endpoint, num)
 			// defer close(decisions)
 
-			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
+			onDecide := api.EndpointsFunc(func(_ context.Context, nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
 			})
@@ -374,7 +376,7 @@ func (p *paxosSuite) TestRecoveryFromFastRoundDifferentProposals() {
 			decisions := make(chan []*remoting.Endpoint, num)
 			// defer close(decisions)
 
-			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
+			onDecide := api.EndpointsFunc(func(_ context.Context, nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
 			})
@@ -402,7 +404,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 			decisions := make(chan []*remoting.Endpoint, num)
 			defer close(decisions)
 
-			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
+			onDecide := api.EndpointsFunc(func(_ context.Context, nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
 			})
@@ -417,7 +419,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRound() {
 			})
 			result := p.waitAndVerifyAgreement(0, 20, decisions)
 			instances.Each(func(host *remoting.Endpoint, inst *Fast) {
-				go inst.startClassicPaxosRound()
+				go inst.startClassicPaxosRound(context.Background())
 			})
 			p.Require().Empty(result)
 			result = p.waitAndVerifyAgreement(num, 20, decisions)
@@ -457,7 +459,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 			decisions := make(chan []*remoting.Endpoint, tc.N)
 			// defer close(decisions)
 
-			onDecide := api.EndpointsFunc(func(nodes []*remoting.Endpoint) error {
+			onDecide := api.EndpointsFunc(func(_ context.Context, nodes []*remoting.Endpoint) error {
 				decisions <- nodes
 				return nil
 			})
@@ -476,7 +478,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 			})
 
 			p.waitAndVerifyAgreement(0, 20, decisions)
-			instances.Each(func(_ *remoting.Endpoint, inst *Fast) { go inst.startClassicPaxosRound() })
+			instances.Each(func(_ *remoting.Endpoint, inst *Fast) { go inst.startClassicPaxosRound(context.Background()) })
 			decision := p.waitAndVerifyAgreement(tc.N, 20, decisions)
 			p.Require().NotEmpty(decision)
 			if len(tc.DecisionChoices) == 1 {

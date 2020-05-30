@@ -67,3 +67,4 @@ cmake-build-debug/
 ## Plugin-specific files:
 
 .idea/
+*.log

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/casualjim/go-rapid/remoting"
@@ -45,24 +46,24 @@ type Subscriber interface {
 }
 
 // EndpointsFunc handler for endpoint collections
-type EndpointsFunc func([]*remoting.Endpoint) error
+type EndpointsFunc func(context.Context, []*remoting.Endpoint) error
 
 // AndThen combinator of 2 functions where the next function will be called after the receiver function
 func (this EndpointsFunc) AndThen(next EndpointsFunc) EndpointsFunc {
-	return func(eps []*remoting.Endpoint) error {
-		if err := this(eps); err != nil {
+	return func(ctx context.Context, eps []*remoting.Endpoint) error {
+		if err := this(ctx, eps); err != nil {
 			return err
 		}
-		return next(eps)
+		return next(ctx, eps)
 	}
 }
 
 // Compose combinator of 2 functions where the next function will be called before the receiver function
 func (this EndpointsFunc) Compose(next EndpointsFunc) EndpointsFunc {
-	return func(eps []*remoting.Endpoint) error {
-		if err := next(eps); err != nil {
+	return func(ctx context.Context, eps []*remoting.Endpoint) error {
+		if err := next(ctx, eps); err != nil {
 			return err
 		}
-		return this(eps)
+		return this(ctx, eps)
 	}
 }

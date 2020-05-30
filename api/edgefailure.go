@@ -4,12 +4,11 @@ import (
 	"context"
 
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/rs/zerolog"
 )
 
-type DetectorFactory func(zerolog.Logger, Client) Detector
+type DetectorFactory func(Client) Detector
 
-type EdgeFailureCallback func(*remoting.Endpoint)
+type EdgeFailureCallback func(context.Context, *remoting.Endpoint)
 
 type DetectorFunc func(*remoting.Endpoint, EdgeFailureCallback) DetectorJob
 

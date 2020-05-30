@@ -31,19 +31,11 @@ type config struct {
 	client          api.Client
 	configurationID int64
 	myAddr          *remoting.Endpoint
-	log             zerolog.Logger
 
 	membershipSize int
 	onDecide       api.EndpointsFunc
 
 	consensusFallbackTimeoutBaseDelay time.Duration
-}
-
-// Logger to use for Classic
-func Logger(lg zerolog.Logger) Option {
-	return func(c *config) {
-		c.log = lg
-	}
 }
 
 func (c *config) Validate() error {
@@ -119,7 +111,6 @@ func ConsensusFallbackTimeoutBaseDelay(dur time.Duration) Option {
 // NewClassic creates a new classic classic consensus protocol
 func NewClassic(opts ...Option) (*Classic, error) {
 	var c config
-	c.log = zerolog.Nop()
 	c.consensusFallbackTimeoutBaseDelay = defaultBaseDelay
 	for _, apply := range opts {
 		apply(&c)
@@ -129,7 +120,6 @@ func NewClassic(opts ...Option) (*Classic, error) {
 		return nil, err
 	}
 
-	c.log = c.log.With().Str("addr", endpointStr(c.myAddr)).Logger()
 	return &Classic{
 		config:          c,
 		rnd:             &remoting.Rank{},
@@ -174,20 +164,21 @@ func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 		return
 	}
 
+	lg := zerolog.Ctx(ctx)
 	addr := fmt.Sprintf("%s:%d", p.myAddr.Hostname, p.myAddr.Port)
 	hash := epchecksum.Checksum(p.myAddr, 0)
 
 	p.crnd = &remoting.Rank{Round: round, NodeIndex: int32(hash)}
 
-	p.log.Debug().Str("sender", addr).Str("round", protojson.Format(p.crnd)).Msg("Prepare called")
+	lg.Debug().Str("sender", addr).Str("round", protojson.Format(p.crnd)).Msg("Prepare called")
 	req := &remoting.Phase1AMessage{
-		ConfigurationId: int64(p.configurationID),
+		ConfigurationId: p.configurationID,
 		Sender:          p.myAddr,
 		Rank:            p.crnd,
 	}
 	p.lock.Unlock()
 
-	p.log.Debug().Str("msg", protojson.Format(req)).Msg("broadcasting phase 1a message")
+	lg.Debug().Str("msg", protojson.Format(req)).Msg("broadcasting phase 1a message")
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
@@ -214,11 +205,11 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 	}
 
 	p.lock.Lock()
-
+	lg := zerolog.Ctx(ctx)
 	if compareRanks(p.rnd, msg.GetRank()) < 0 {
 		p.rnd = msg.GetRank()
 	} else {
-		p.log.Debug().
+		lg.Debug().
 			Str("round", protojson.Format(p.rnd)).
 			Str("msg", protojson.Format(msg)).
 			Msg("rejecting prepare message from lower rank")
@@ -230,17 +221,17 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 	for i := range p.vval {
 		vvalstr[i] = protojson.Format(p.vval[i])
 	}
-	p.log.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("sending back")
+	lg.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("sending back")
 
 	req := &remoting.Phase1BMessage{
-		ConfigurationId: int64(p.configurationID),
+		ConfigurationId: p.configurationID,
 		Rnd:             p.rnd,
 		Sender:          p.myAddr,
 		Vrnd:            p.vrnd,
 		Vval:            p.vval,
 	}
 	//p.lock.Unlock()
-	write := p.resultLogger("phase 1b message")
+	write := p.resultLogger(ctx, "phase 1b message")
 	write(p.client.Do(ctx, msg.GetSender(), remoting.WrapRequest(req)))
 }
 
@@ -259,7 +250,8 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 		return
 	}
 
-	p.log.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase1b message")
+	lg := zerolog.Ctx(ctx)
+	lg.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase1b message")
 
 	p.phase1bMessages = append(p.phase1bMessages, msg)
 	if len(p.phase1bMessages) <= (p.membershipSize / 2) {
@@ -271,7 +263,7 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 	// being received, but we can enter the following if statement only once when a valid cval is identified.
 	proposal, err := p.selectProposalUsingCoordinatorRule(p.phase1bMessages)
 	if err != nil {
-		p.log.Debug().Err(err).Msg("failed to select a proposal in phase 1b handler")
+		lg.Debug().Err(err).Msg("failed to select a proposal in phase 1b handler")
 		p.lock.Unlock()
 		return
 	}
@@ -302,7 +294,8 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	if msg.GetConfigurationId() != p.configurationID {
 		return
 	}
-	p.log.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase2a message")
+	lg := zerolog.Ctx(ctx)
+	lg.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase2a message")
 
 	// if compareRanks(p.rnd, msg.GetRnd()) > 0 || p.vrnd.Equal(msg.GetRnd()) {
 	if compareRanks(p.rnd, msg.GetRnd()) > 0 || rnkEquals(p.vrnd, msg.GetRnd()) {
@@ -314,10 +307,10 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	p.vrnd = msg.GetRnd()
 	p.vval = msg.GetVval()
 	p.lock.Unlock()
-	p.log.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("accepted value")
+	lg.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("accepted value")
 
 	req := &remoting.Phase2BMessage{
-		ConfigurationId: int64(p.configurationID),
+		ConfigurationId: p.configurationID,
 		Rnd:             msg.GetRnd(),
 		Sender:          p.myAddr,
 		Endpoints:       p.vval,
@@ -331,7 +324,8 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 		return
 	}
 
-	p.log.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase2b message")
+	lg := zerolog.Ctx(ctx)
+	lg.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase2b message")
 
 	rnd := msg.GetRnd()
 	if rnd == nil {
@@ -341,14 +335,14 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 	msgsInRound := p.acceptResponses.AddAndCount(rnd, msg)
 	if msgsInRound > (p.membershipSize / 2) {
 		decision := msg.GetEndpoints()
-		p.log.Debug().
+		lg.Debug().
 			Str("decision", endpointsStr(decision)).
 			Str("rnd", protojson.Format(rnd)).
 			Int("msgsInRound", msgsInRound).
 			Msg("decided on")
 
-		if err := p.onDecide(decision); err != nil {
-			p.log.Err(err).Msg("notifying subscribers of decision")
+		if err := p.onDecide(ctx, decision); err != nil {
+			lg.Err(err).Msg("notifying subscribers of decision")
 		}
 		atomic.CompareAndSwapUint32(&p.decided, 0, 1)
 	}
@@ -356,7 +350,7 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 
 // This is how we're notified that a fast round is initiated. Invoked by a FastPaxos instance. This
 // represents the logic at an acceptor receiving a phase2a message directly.
-func (p *Classic) registerFastRoundVote(vote []*remoting.Endpoint) {
+func (p *Classic) registerFastRoundVote(ctx context.Context, vote []*remoting.Endpoint) {
 	p.lock.Lock()
 	defer p.lock.Unlock()
 	// Do not participate in our only fast round if we are already participating in a classic round.
@@ -373,7 +367,7 @@ func (p *Classic) registerFastRoundVote(vote []*remoting.Endpoint) {
 	p.vrnd = p.rnd
 	p.vval = vote
 
-	p.log.Debug().Str("vote", endpointsStr(vote)).Msg("voted in fast round for proposal")
+	zerolog.Ctx(ctx).Debug().Str("vote", endpointsStr(vote)).Msg("voted in fast round for proposal")
 }
 
 func endpointsStr(eps []*remoting.Endpoint) string {
@@ -495,13 +489,13 @@ func collectVValsForMaxVrnd(messages []*remoting.Phase1BMessage, maxVrnd *remoti
 	return collectedVvals
 }
 
-func (p *Classic) resultLogger(prefix string) func(*remoting.RapidResponse, error) {
+func (p *Classic) resultLogger(ctx context.Context, prefix string) func(*remoting.RapidResponse, error) {
 	return func(resp *remoting.RapidResponse, err error) {
 		if err != nil {
-			p.log.Err(err).Msg("failed to send " + prefix)
+			zerolog.Ctx(ctx).Err(err).Msg("failed to send " + prefix)
 			return
 		}
-		p.log.Debug().Msg("successfully sent " + prefix)
+		zerolog.Ctx(ctx).Debug().Msg("successfully sent " + prefix)
 	}
 }
 

@@ -1,7 +1,7 @@
 package membership
 
 import (
-	"bytes"
+	"context"
 	"log"
 	"os"
 	"os/signal"
@@ -9,6 +9,8 @@ import (
 	"sort"
 	"syscall"
 	"testing"
+
+	"github.com/casualjim/go-rapid/internal/epchecksum"
 
 	"github.com/xtgo/set"
 
@@ -44,14 +46,15 @@ func newNodeID() *remoting.NodeId {
 func TestView_AddOneRing(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	addr := endpoint("127.0.0.1", 123)
 
-	require.NoError(t, vw.RingAdd(addr, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, addr, newNodeID()))
 	require.Equal(t, 1, vw.rings[0].Len())
 
 	for i := 0; i < k; i++ {
-		list := vw.GetRing(i)
+		list := vw.GetRing(ctx, i)
 		assert.Len(t, list, 1)
 		for _, address := range list {
 			requireProtoEqual(t, addr, address)
@@ -66,15 +69,16 @@ func requireProtoEqual(t testing.TB, l, r proto.Message) {
 func TestView_MultipleRingAdditions(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 10
 
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", i)
-		require.NoError(t, vw.RingAdd(addr, newNodeID()))
+		require.NoError(t, vw.RingAdd(ctx, addr, newNodeID()))
 	}
 	for i := 0; i < k; i++ {
-		lst := vw.GetRing(i)
+		lst := vw.GetRing(ctx, i)
 		assert.Len(t, lst, numNodes)
 	}
 }
@@ -82,24 +86,25 @@ func TestView_MultipleRingAdditions(t *testing.T) {
 func TestView_RingReAdditions(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 10
 	const startPort = 0
 
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", startPort+i)
-		require.NoError(t, vw.RingAdd(addr, newNodeID()))
+		require.NoError(t, vw.RingAdd(ctx, addr, newNodeID()))
 	}
 
 	for i := 0; i < k; i++ {
-		lst := vw.GetRing(i)
+		lst := vw.GetRing(ctx, i)
 		assert.Len(t, lst, numNodes)
 	}
 
 	var numErrs int
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", startPort+i)
-		if assert.Error(t, vw.RingAdd(addr, newNodeID())) {
+		if assert.Error(t, vw.RingAdd(ctx, addr, newNodeID())) {
 			numErrs++
 		}
 	}
@@ -109,13 +114,14 @@ func TestView_RingReAdditions(t *testing.T) {
 func TestView_RingOnlyDelete(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 10
 	var numErrs int
 
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", i)
-		if assert.Error(t, vw.RingDel(addr)) {
+		if assert.Error(t, vw.RingDel(ctx, addr)) {
 			numErrs++
 		}
 	}
@@ -126,24 +132,25 @@ func TestView_RingOnlyDelete(t *testing.T) {
 func TestView_RingAdditionsAndDeletions(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 10
 	var numErrs int
 
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", i)
-		require.NoError(t, vw.RingAdd(addr, newNodeID()))
+		require.NoError(t, vw.RingAdd(ctx, addr, newNodeID()))
 	}
 	for i := 0; i < numNodes; i++ {
 		addr := endpoint("127.0.0.1", i)
-		if err := vw.RingDel(addr); err != nil {
+		if err := vw.RingDel(ctx, addr); err != nil {
 			numErrs++
 		}
 	}
 	assert.Equal(t, 0, numErrs)
 
 	for i := 0; i < k; i++ {
-		lst := vw.GetRing(i)
+		lst := vw.GetRing(ctx, i)
 		assert.Empty(t, lst)
 	}
 }
@@ -151,11 +158,12 @@ func TestView_RingAdditionsAndDeletions(t *testing.T) {
 func TestView_MonitoringRelationshipEdge(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 
 	addr := endpoint("127.0.0.1", 1)
-	require.NoError(t, vw.RingAdd(addr, newNodeID()))
-	mee, err := vw.SubjectsOf(addr)
+	require.NoError(t, vw.RingAdd(ctx, addr, newNodeID()))
+	mee, err := vw.SubjectsOf(ctx, addr)
 	require.NoError(t, err)
 	require.Empty(t, mee)
 	mms, err := vw.ObserversForNode(addr)
@@ -163,7 +171,7 @@ func TestView_MonitoringRelationshipEdge(t *testing.T) {
 	require.Empty(t, mms)
 
 	addr2 := endpoint("127.0.0.1", 2)
-	_, err2 := vw.SubjectsOf(addr2)
+	_, err2 := vw.SubjectsOf(ctx, addr2)
 	require.Error(t, err2)
 	_, err3 := vw.ObserversForNode(addr2)
 	require.Error(t, err3)
@@ -172,10 +180,11 @@ func TestView_MonitoringRelationshipEdge(t *testing.T) {
 func TestView_MonitoringRelationshipEmpty(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	var numErrs int
 	addr := endpoint("127.0.0.1", 1)
-	if _, err := vw.SubjectsOf(addr); err != nil {
+	if _, err := vw.SubjectsOf(ctx, addr); err != nil {
 		numErrs++
 	}
 	assert.Equal(t, 1, numErrs)
@@ -189,14 +198,15 @@ func TestView_MonitoringRelationshipEmpty(t *testing.T) {
 func TestView_MonitoringRelationshipTwoNodes(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	n1 := endpoint("127.0.0.1", 1)
 	n2 := endpoint("127.0.0.1", 2)
 
-	require.NoError(t, vw.RingAdd(n1, newNodeID()))
-	require.NoError(t, vw.RingAdd(n2, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n1, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n2, newNodeID()))
 
-	mee, err := vw.SubjectsOf(n1)
+	mee, err := vw.SubjectsOf(ctx, n1)
 	if assert.NoError(t, err) {
 		assert.Len(t, mee, k)
 	}
@@ -215,7 +225,7 @@ func (n nodeSet) Len() int {
 }
 
 func (n nodeSet) Less(i, j int) bool {
-	return bytes.Compare(n[i].Hostname, n[j].Hostname) < 0 || n[i].Port < n[j].Port
+	return epchecksum.Checksum(n[i], 0) < epchecksum.Checksum(n[j], 0)
 }
 
 func (n nodeSet) Swap(i, j int) {
@@ -231,16 +241,17 @@ func toNodeSet(addrs nodeSet) []*remoting.Endpoint {
 func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	n1 := endpoint("127.0.0.1", 1)
 	n2 := endpoint("127.0.0.1", 2)
 	n3 := endpoint("127.0.0.1", 3)
 
-	require.NoError(t, vw.RingAdd(n1, newNodeID()))
-	require.NoError(t, vw.RingAdd(n2, newNodeID()))
-	require.NoError(t, vw.RingAdd(n3, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n1, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n2, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n3, newNodeID()))
 
-	mee, err := vw.SubjectsOf(n1)
+	mee, err := vw.SubjectsOf(ctx, n1)
 	if assert.NoError(t, err) {
 		assert.Len(t, mee, k)
 	}
@@ -251,8 +262,8 @@ func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 	assert.Len(t, toNodeSet(mee), 2)
 	assert.Len(t, toNodeSet(mms), 2)
 
-	require.NoError(t, vw.RingDel(n2))
-	mee2, err := vw.SubjectsOf(n1)
+	require.NoError(t, vw.RingDel(ctx, n2))
+	mee2, err := vw.SubjectsOf(ctx, n1)
 	if assert.NoError(t, err) {
 		assert.Len(t, mee, k)
 	}
@@ -267,6 +278,7 @@ func TestView_MonitoringRelationshipThreeNodesWithDelete(t *testing.T) {
 func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 1000
 	var list []*remoting.Endpoint
@@ -274,11 +286,11 @@ func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
 	for i := 0; i < numNodes; i++ {
 		n := endpoint("127.0.0.1", i)
 		list = append(list, n)
-		require.NoError(t, vw.RingAdd(n, newNodeID()))
+		require.NoError(t, vw.RingAdd(ctx, n, newNodeID()))
 	}
 
 	for i := 0; i < numNodes; i++ {
-		mees, meerr := vw.SubjectsOf(list[i])
+		mees, meerr := vw.SubjectsOf(ctx, list[i])
 		mms, mmerr := vw.ObserversForNode(list[i])
 		if assert.NoError(t, meerr) {
 			assert.Len(t, mees, k)
@@ -292,13 +304,14 @@ func TestView_MonitoringRelationshipMultipleNodes(t *testing.T) {
 func TestView_MonitoringRelationshipBootstrap(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const serverPort = 1234
 	n := endpoint("127.0.0.1", serverPort)
-	require.NoError(t, vw.RingAdd(n, newNodeID()))
+	require.NoError(t, vw.RingAdd(ctx, n, newNodeID()))
 
 	joiningNode := endpoint("127.0.0.1", serverPort+1)
-	exms := vw.ExpectedObserversOf(joiningNode)
+	exms := vw.ExpectedObserversOf(ctx, joiningNode)
 	require.Len(t, exms, k)
 	require.Len(t, toNodeSet(exms), 1)
 	requireProtoEqual(t, n, exms[0])
@@ -307,6 +320,7 @@ func TestView_MonitoringRelationshipBootstrap(t *testing.T) {
 func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const (
 		serverPort = 1234
@@ -318,8 +332,8 @@ func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
 
 	for i := 0; i < numNodes; i++ {
 		n := endpoint("127.0.0.1", serverPort+i)
-		require.NoError(t, vw.RingAdd(n, newNodeID()))
-		exms := vw.ExpectedObserversOf(joiningNode)
+		require.NoError(t, vw.RingAdd(ctx, n, newNodeID()))
+		exms := vw.ExpectedObserversOf(ctx, joiningNode)
 		numMonitorActual := len(exms)
 		assert.True(t, numMonitor <= numMonitorActual)
 		numMonitor = numMonitorActual
@@ -331,57 +345,59 @@ func TestView_MonitoringRelationshipBootstrapMultiple(t *testing.T) {
 func TestView_NodeUniqueIDNoDeletions(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	var numErrs int
 
 	n1, uuid1 := endpoint("127.0.0.1", 1), newNodeID()
-	require.NoError(t, vw.RingAdd(n1, uuid1))
+	require.NoError(t, vw.RingAdd(ctx, n1, uuid1))
 
 	n2, uuid2 := endpoint("127.0.0.1", 1), &remoting.NodeId{
 		High: uuid1.High,
 		Low:  uuid1.Low,
 	}
 	// same host, same id
-	if assert.Error(t, vw.RingAdd(n2, uuid2)) {
+	if assert.Error(t, vw.RingAdd(ctx, n2, uuid2)) {
 		numErrs++
 	}
 	require.Equal(t, 1, numErrs)
 
 	// same host, different id
-	if assert.Error(t, vw.RingAdd(n2, newNodeID())) {
+	if assert.Error(t, vw.RingAdd(ctx, n2, newNodeID())) {
 		numErrs++
 	}
 	require.Equal(t, 2, numErrs)
 
 	n3 := endpoint("127.0.0.1", 2)
 	// different host, same id
-	if assert.Error(t, vw.RingAdd(n3, uuid2)) {
+	if assert.Error(t, vw.RingAdd(ctx, n3, uuid2)) {
 		numErrs++
 	}
 	require.Equal(t, 3, numErrs)
 
-	require.NoError(t, vw.RingAdd(n3, newNodeID()))
-	assert.Len(t, vw.GetRing(0), 2)
+	require.NoError(t, vw.RingAdd(ctx, n3, newNodeID()))
+	assert.Len(t, vw.GetRing(ctx, 0), 2)
 }
 
 func TestView_NodeUniqueIDWithDeletions(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 
 	n1, uuid1 := endpoint("127.0.0.1", 1), newNodeID()
-	require.NoError(t, vw.RingAdd(n1, uuid1))
+	require.NoError(t, vw.RingAdd(ctx, n1, uuid1))
 
 	n2, uuid2 := endpoint("127.0.0.1", 2), newNodeID()
-	require.NoError(t, vw.RingAdd(n2, uuid2))
+	require.NoError(t, vw.RingAdd(ctx, n2, uuid2))
 	// remove node from the ring
-	require.NoError(t, vw.RingDel(n2))
+	require.NoError(t, vw.RingDel(ctx, n2))
 
 	// node rejoins the ring
-	if assert.Error(t, vw.RingAdd(n2, uuid2)) {
+	if assert.Error(t, vw.RingAdd(ctx, n2, uuid2)) {
 		// re-attempt with a new id
-		if assert.NoError(t, vw.RingAdd(n2, newNodeID())) {
-			assert.Len(t, vw.GetRing(0), 2)
+		if assert.NoError(t, vw.RingAdd(ctx, n2, newNodeID())) {
+			assert.Len(t, vw.GetRing(ctx, 0), 2)
 		}
 	}
 }
@@ -389,13 +405,14 @@ func TestView_NodeUniqueIDWithDeletions(t *testing.T) {
 func TestView_NodeConfigurationChange(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw := NewView(k, nil, nil)
 	const numNodes = 1000
 	set := make(map[int64]struct{}, numNodes)
 	for i := 0; i < numNodes; i++ {
 		n := endpoint("127.0.0.1", i)
-		require.NoError(t, vw.RingAdd(n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
-		set[vw.ConfigurationID()] = struct{}{}
+		require.NoError(t, vw.RingAdd(ctx, n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
+		set[vw.ConfigurationID(ctx)] = struct{}{}
 	}
 	assert.Len(t, set, numNodes)
 }
@@ -403,6 +420,7 @@ func TestView_NodeConfigurationChange(t *testing.T) {
 func TestView_NodeConfigurationsAcrossMViews(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	vw1 := NewView(k, nil, nil)
 	vw2 := NewView(k, nil, nil)
 	const numNodes = 1000
@@ -412,14 +430,14 @@ func TestView_NodeConfigurationsAcrossMViews(t *testing.T) {
 
 	for i := 0; i < numNodes; i++ {
 		n := endpoint("127.0.0.1", i)
-		require.NoError(t, vw1.RingAdd(n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
-		list1[i] = vw1.ConfigurationID()
+		require.NoError(t, vw1.RingAdd(ctx, n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
+		list1[i] = vw1.ConfigurationID(ctx)
 	}
 
 	for i := numNodes - 1; i > -1; i-- {
 		n := endpoint("127.0.0.1", i)
-		require.NoError(t, vw2.RingAdd(n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
-		list2 = append(list2, vw2.ConfigurationID())
+		require.NoError(t, vw2.RingAdd(ctx, n, api.NodeIdFromUUID(uuid.NewMD5(uuid.Nil, []byte(n.String())))))
+		list2 = append(list2, vw2.ConfigurationID(ctx))
 	}
 
 	assert.Len(t, list1, numNodes)

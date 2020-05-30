@@ -1,7 +1,7 @@
 package membership
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"sort"
 	"sync"
@@ -13,14 +13,13 @@ import (
 )
 
 // NewMultiNodeCutDetector with the specified initialization values
-func NewMultiNodeCutDetector(log zerolog.Logger, k, h, l int) *MultiNodeCutDetector {
+func NewMultiNodeCutDetector(k, h, l int) *MultiNodeCutDetector {
 	return &MultiNodeCutDetector{
 		k:              k,
 		h:              h,
 		l:              l,
 		reportsPerHost: make(map[uint64]map[int32]*remoting.Endpoint, 150),
 		preProposal:    make(map[uint64]*remoting.Endpoint, 150),
-		log:            log,
 	}
 }
 
@@ -38,7 +37,6 @@ type MultiNodeCutDetector struct {
 	preProposal       map[uint64]*remoting.Endpoint
 	seenLinkDown      bool
 	lock              sync.RWMutex
-	log               zerolog.Logger
 }
 
 // KnownProposals for this buffer
@@ -72,25 +70,25 @@ func (b *MultiNodeCutDetector) Clear() {
 // method returns a view change proposal.
 //
 // returns a list of endpoints about which a view change has been recorded. Empty list if there is no proposal.
-func (b *MultiNodeCutDetector) AggregateForProposal(msg *remoting.AlertMessage) ([]*remoting.Endpoint, error) {
+func (b *MultiNodeCutDetector) AggregateForProposal(ctx context.Context, msg *remoting.AlertMessage) ([]*remoting.Endpoint, error) {
 	if msg == nil {
 		return nil, errors.New("multi-node cut detector: expected msg to not be nil")
 	}
-
+	zerolog.Ctx(ctx).Debug().Interface("alert", msg).Msg("aggregating for proposal")
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
 	var proposals []*remoting.Endpoint
 	for _, rn := range msg.GetRingNumber() {
-		b.log.Debug().Int32("ring", rn).Msg("aggregating proposal for ring")
-		proposals = append(proposals, b.aggregateForProposal(msg, rn)...)
+		zerolog.Ctx(ctx).Debug().Int32("ring", rn).Msg("aggregating proposal for ring")
+		proposals = append(proposals, b.aggregateForProposal(ctx, msg, rn)...)
 	}
 	return proposals, nil
 }
 
-func (b *MultiNodeCutDetector) aggregateForProposal(msg *remoting.AlertMessage, ringNumber int32) []*remoting.Endpoint {
+func (b *MultiNodeCutDetector) aggregateForProposal(ctx context.Context, msg *remoting.AlertMessage, ringNumber int32) []*remoting.Endpoint {
 	if msg.EdgeStatus == remoting.EdgeStatus_DOWN {
-		b.log.Debug().Msg("seen link down event")
+		zerolog.Ctx(ctx).Debug().Msg("seen link down event")
 		b.seenLinkDown = true
 	}
 
@@ -105,30 +103,31 @@ func (b *MultiNodeCutDetector) aggregateForProposal(msg *remoting.AlertMessage, 
 	}
 
 	if _, hasRing := reportsForHost[ringNumber]; hasRing { // duplicate announcement, ignore.
-		b.log.Debug().Msg("stopping aggregation, because already seen this announcement")
+		zerolog.Ctx(ctx).Debug().Msg("stopping aggregation, because already seen this announcement")
 		return nil
 	}
 
 	reportsForHost[ringNumber] = msg.EdgeSrc
-	b.log.Debug().
+	zerolog.Ctx(ctx).Debug().
 		Int("num_reports", len(reportsForHost)).
 		Str("src", epStr(msg.EdgeSrc)).
 		Str("dst", epStr(msg.EdgeDst)).
 		Int32("ring", ringNumber).
 		Interface("state", b.reportsPerHost).
 		Msg("calculating aggregate")
-	return b.calculateAggregate(len(reportsForHost), edgeDst, msg.EdgeDst)
+	return b.calculateAggregate(ctx, len(reportsForHost), edgeDst, msg.EdgeDst)
 }
 
-func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey uint64, lnkDst *remoting.Endpoint) []*remoting.Endpoint {
+func (b *MultiNodeCutDetector) calculateAggregate(ctx context.Context, numReportsForHost int, dstKey uint64, lnkDst *remoting.Endpoint) []*remoting.Endpoint {
 
 	if numReportsForHost == b.l {
-		b.log.Debug().Int("num_reports_for_host", numReportsForHost).Msg("we're at the low watermark")
+		zerolog.Ctx(ctx).Debug().Int("num_reports_for_host", numReportsForHost).Msg("low watermark")
 		b.updatesInProgress++
 		b.preProposal[dstKey] = lnkDst
 	}
 
 	if numReportsForHost == b.h {
+		zerolog.Ctx(ctx).Debug().Int("num_reports_for_host", numReportsForHost).Msg("high watermark")
 		// Enough reports about linkDst have been received that it is safe to act upon,
 		// provided there are no other nodes with L < #reports < H.
 		delete(b.preProposal, dstKey)
@@ -140,39 +139,39 @@ func (b *MultiNodeCutDetector) calculateAggregate(numReportsForHost int, dstKey 
 			ret := make([]*remoting.Endpoint, len(b.proposals))
 			copy(ret, b.proposals)
 			b.proposals = nil
-			b.log.Debug().Int("results", len(ret)).Msg("returning results because there are no more updates in progress")
+			zerolog.Ctx(ctx).Debug().Int("results", len(ret)).Msg("returning results because there are no more updates in progress")
 			return ret
 		}
 	}
-
+	zerolog.Ctx(ctx).Debug().Int("num_reports_for_host", numReportsForHost).Msg("no aggregate needed")
 	return nil
 }
 
 // InvalidateFailingLinks between nodes that are failing or have failed. This step may be skipped safely
 // when there are no failing nodes.
-func (b *MultiNodeCutDetector) InvalidateFailingLinks(view *View) ([]*remoting.Endpoint, error) {
+func (b *MultiNodeCutDetector) InvalidateFailingLinks(ctx context.Context, view *View) ([]*remoting.Endpoint, error) {
 	b.lock.Lock()
 	defer b.lock.Unlock()
 
 	if !b.seenLinkDown {
-		b.log.Debug().Msg("no invalid links seen, returning")
+		zerolog.Ctx(ctx).Debug().Msg("no invalid links seen, returning")
 		return nil, nil
 	}
 
 	var proposalsToReturn []*remoting.Endpoint
 	for _, nodeInFlux := range b.preProposal {
-		b.log.Debug().Str("node", epStr(nodeInFlux)).Msg("checking node in flux")
+		zerolog.Ctx(ctx).Debug().Str("node", epStr(nodeInFlux)).Msg("checking node in flux")
 		var ringNumber int32
-		for _, obs := range view.KnownOrExpectedObserversFor(nodeInFlux) {
+		for _, obs := range view.KnownOrExpectedObserversFor(ctx, nodeInFlux) {
 			observer := obs // pin
-			b.log.Debug().Str("observer", epStr(observer)).Msg("checking proposal for observer")
+			zerolog.Ctx(ctx).Debug().Str("observer", epStr(observer)).Str("node", epStr(nodeInFlux)).Msg("checking proposal for observer")
 			if hasProposal(b.proposals, observer) || hasPreproposal(b.preProposal, observer) {
 				msg := &remoting.AlertMessage{
 					EdgeSrc:    observer,
 					EdgeDst:    nodeInFlux,
-					EdgeStatus: view.edgeStatusFor(nodeInFlux),
+					EdgeStatus: view.edgeStatusFor(ctx, nodeInFlux),
 				}
-				aggregate := b.aggregateForProposal(msg, ringNumber)
+				aggregate := b.aggregateForProposal(ctx, msg, ringNumber)
 				proposalsToReturn = append(proposalsToReturn, aggregate...)
 			}
 			ringNumber++
@@ -188,9 +187,34 @@ func hasPreproposal(addrs map[uint64]*remoting.Endpoint, addr *remoting.Endpoint
 
 func hasProposal(addrs []*remoting.Endpoint, addr *remoting.Endpoint) bool {
 	sz := len(addrs)
-	pos := sort.Search(sz, func(i int) bool {
-		candidate := addrs[i]
-		return bytes.Equal(candidate.Hostname, addr.Hostname) && candidate.Port == addr.Port
-	})
+
+	csum := func(ep *remoting.Endpoint) uint64 { return epchecksum.Checksum(ep, 0) }
+	cs := csum(addr)
+
+	sort.Slice(addrs, func(i, j int) bool { return csum(addrs[i]) < csum(addrs[j]) })
+	pos := sort.Search(sz, func(i int) bool { return csum(addrs[i]) >= cs })
 	return pos != sz
 }
+
+//
+//type endpoints []*remoting.Endpoint
+//
+//func (e endpoints) Len() int {
+//	return len(e)
+//}
+//
+//func (e endpoints) Less(i, j int) bool {
+//	addressComparator(0).
+//}
+//
+//func (e endpoints) Swap(i, j int) {
+//	panic("implement me")
+//}
+//
+//func (e endpoints) Push(x interface{}) {
+//	panic("implement me")
+//}
+//
+//func (e endpoints) Pop() interface{} {
+//	panic("implement me")
+//}

@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/casualjim/go-rapid/internal/epchecksum"
+
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/mocks"
 	"github.com/casualjim/go-rapid/remoting"
-	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
@@ -47,11 +48,11 @@ func TestScheduler_Schedule(t *testing.T) {
 	})
 
 	callbacks := func() api.EdgeFailureCallback {
-		return api.EdgeFailureCallback(func(_ *remoting.Endpoint) {})
+		return api.EdgeFailureCallback(func(_ context.Context, _ *remoting.Endpoint) {})
 	}
 
-	sched := NewScheduler(detector, callbacks, 10*time.Millisecond)
-	sched.rootContext = ctx
+	sched := NewScheduler(ctx, detector, callbacks, 10*time.Millisecond)
+	sched.baseContext = ctx
 	sched.cancelAll = cancel
 	sched.Schedule(addr)
 	<-done
@@ -89,32 +90,32 @@ func TestScheduler_CancelOne(t *testing.T) {
 	})
 
 	callbacks := func() api.EdgeFailureCallback {
-		return api.EdgeFailureCallback(func(_ *remoting.Endpoint) {})
+		return api.EdgeFailureCallback(func(_ context.Context, _ *remoting.Endpoint) {})
 	}
 
-	sched := NewScheduler(detector, callbacks, 10*time.Millisecond)
-	sched.rootContext = ctx
+	sched := NewScheduler(context.Background(), detector, callbacks, 10*time.Millisecond)
+	sched.baseContext = ctx
 	sched.cancelAll = cancel
 	sched.Schedule(addr)
 	sched.Schedule(addr2)
 
 	sched.lock.Lock()
-	require.Contains(t, sched.detectors, addr)
-	require.Contains(t, sched.detectors, addr2)
+	require.Contains(t, sched.detectors, epchecksum.Checksum(addr, 0))
+	require.Contains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
 	<-done
 	sched.Cancel(addr)
 	sched.lock.Lock()
-	require.NotContains(t, sched.detectors, addr)
-	require.Contains(t, sched.detectors, addr2)
+	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr, 0))
+	require.Contains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
 	<-done2
 	require.Equal(t, 2, count.Get())
 	require.Equal(t, 3, jobCount.Get())
 	require.Equal(t, 6, jobCount2.Get())
 	sched.lock.Lock()
-	require.NotContains(t, sched.detectors, addr)
-	require.NotContains(t, sched.detectors, addr2)
+	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr, 0))
+	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
 
 }
@@ -140,24 +141,24 @@ func TestScheduler_CancelAll(t *testing.T) {
 	})
 
 	callbacks := func() api.EdgeFailureCallback {
-		return api.EdgeFailureCallback(func(_ *remoting.Endpoint) {})
+		return func(_ context.Context, _ *remoting.Endpoint) {}
 	}
 
-	sched := NewScheduler(detector, callbacks, 10*time.Millisecond)
+	sched := NewScheduler(context.Background(), detector, callbacks, 10*time.Millisecond)
 	sched.Schedule(addr)
 	sched.Schedule(addr2)
 
 	sched.lock.Lock()
-	require.Contains(t, sched.detectors, addr)
-	require.Contains(t, sched.detectors, addr2)
+	require.Contains(t, sched.detectors, epchecksum.Checksum(addr, 0))
+	require.Contains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
 	<-done
 	sched.CancelAll()
 	require.Equal(t, 2, count.Get())
 	require.Equal(t, 3, jobCount.Get())
 	sched.lock.Lock()
-	require.NotContains(t, sched.detectors, addr)
-	require.NotContains(t, sched.detectors, addr2)
+	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr, 0))
+	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
 
 }
@@ -167,11 +168,10 @@ func TestPingPong_Failure(t *testing.T) {
 	addr := api.Must(api.Endpoint("127.0.0.1:3939"))
 	var failed *remoting.Endpoint
 	det := &pingPongDetector{
-		log:          zerolog.Nop(),
 		client:       cl,
 		addr:         addr,
 		failureCount: failureThreshold,
-		onFailure: func(ep *remoting.Endpoint) {
+		onFailure: func(_ context.Context, ep *remoting.Endpoint) {
 			failed = ep
 		},
 	}
@@ -193,7 +193,7 @@ func TestPingPong_HandleFailure(t *testing.T) {
 		Return(nil, errors.New("dummy"))
 
 	var failed *remoting.Endpoint
-	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(cl).Create(addr, func(_ context.Context, ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 
@@ -215,7 +215,7 @@ func TestPingPong_Bootstrapping(t *testing.T) {
 		}), nil)
 
 	var failed *remoting.Endpoint
-	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(cl).Create(addr, func(_ context.Context, ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 
@@ -238,7 +238,7 @@ func TestPingPong_Bootstrapping_Failure(t *testing.T) {
 		}), nil)
 
 	var failed *remoting.Endpoint
-	det := PingPong(zerolog.Nop(), cl).Create(addr, func(ep *remoting.Endpoint) {
+	det := PingPong(cl).Create(addr, func(_ context.Context, ep *remoting.Endpoint) {
 		failed = ep
 	}).(*pingPongDetector)
 	det.bootstrapResponseCount = bootstrapCountThreshold

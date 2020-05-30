@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/casualjim/go-rapid/internal/epchecksum"
+
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/stretchr/testify/require"
 
@@ -78,9 +80,9 @@ func TestMetadata_Get_Success(t *testing.T) {
 	addr2 := endpoint(t, "127.0.0.1", 5555)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr:  {Metadata: map[string][]byte{"value": []byte("original")}},
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr, 0):  {ep: addr, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original")}}},
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
 		},
 	}
 
@@ -96,14 +98,14 @@ func TestMetadata_Get_Immutable(t *testing.T) {
 	addr2 := endpoint(t, "127.0.0.1", 5555)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr:  {Metadata: map[string][]byte{"value": []byte("original")}},
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr, 0):  {ep: addr, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original")}}},
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
 		},
 	}
 
 	v, ok, err := md.Get(addr)
-	md.table[addr].Metadata["value"] = []byte("modified")
+	md.table[epchecksum.Checksum(addr, 0)].md.Metadata["value"] = []byte("modified")
 	if assert.NoError(t, err) {
 		assert.True(t, ok)
 		assert.Equal(t, "original", string(v.Metadata["value"]))
@@ -125,9 +127,9 @@ func TestMetadata_Add_Success(t *testing.T) {
 	addr3 := endpoint(t, "127.0.0.1", 4444)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
-			addr3: {Metadata: map[string][]byte{"value": []byte("original3")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original")}}},
+			epchecksum.Checksum(addr3, 0): {ep: addr3, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
 		},
 	}
 
@@ -145,9 +147,9 @@ func TestMetadata_Add_IgnoreRepeated(t *testing.T) {
 	addr3 := endpoint(t, "127.0.0.1", 4444)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
-			addr3: {Metadata: map[string][]byte{"value": []byte("original3")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
+			epchecksum.Checksum(addr3, 0): {ep: addr3, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original3")}}},
 		},
 	}
 
@@ -166,9 +168,9 @@ func TestMetadata_Add_Immutable(t *testing.T) {
 	addr3 := endpoint(t, "127.0.0.1", 4444)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
-			addr3: {Metadata: map[string][]byte{"value": []byte("original3")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
+			epchecksum.Checksum(addr3, 0): {ep: addr3, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original3")}}},
 		},
 	}
 
@@ -196,9 +198,9 @@ func TestMetadata_Del_Success(t *testing.T) {
 	addr3 := endpoint(t, "127.0.0.1", 1394)
 
 	md := &MetadataRegistry{
-		table: map[*remoting.Endpoint]*remoting.Metadata{
-			addr:  {Metadata: map[string][]byte{"value": []byte("original")}},
-			addr2: {Metadata: map[string][]byte{"value": []byte("original2")}},
+		table: map[uint64]entry{
+			epchecksum.Checksum(addr, 0):  {ep: addr, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original")}}},
+			epchecksum.Checksum(addr2, 0): {ep: addr2, md: &remoting.Metadata{Metadata: map[string][]byte{"value": []byte("original2")}}},
 		},
 	}
 

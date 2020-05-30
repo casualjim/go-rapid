@@ -26,6 +26,7 @@ func WrapResponse(msg interface{}) *RapidResponse {
 	}
 	return resp
 }
+
 func WrapRequest(msg interface{}) *RapidRequest {
 	req := &RapidRequest{}
 	switch rmsg := msg.(type) {

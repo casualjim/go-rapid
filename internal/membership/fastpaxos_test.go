@@ -71,7 +71,7 @@ func (fp *fastPaxosSuite) TestFastQuorumNoConflicts() {
 			svc := fp.createAndStartService("server", node, view)
 			require.Equal(args.N, svc.Size())
 
-			cid := view.ConfigurationID()
+			cid := view.ConfigurationID(context.Background())
 			require.NotNil(proposalNode)
 			require.NotEqual(0, cid)
 			for i := 0; i < args.Quorum-1; i++ {
@@ -124,7 +124,7 @@ func (fp *fastPaxosSuite) TestFastQuorumWithConflicts() {
 			svc := fp.createAndStartService("server", node, view)
 			require.Equal(args.N, svc.Size())
 
-			cid := view.ConfigurationID()
+			cid := view.ConfigurationID(context.Background())
 			require.NotNil(proposalNode)
 			require.NotNil(proposalNodeConflict)
 			require.NotEqual(0, cid)
@@ -172,10 +172,11 @@ func (fp *fastPaxosSuite) makeProposal(cid int64, sender *remoting.Endpoint, nod
 }
 
 func (fp *fastPaxosSuite) initView(basePort, n int) *View {
+	ctx := context.Background()
 	view := NewView(fp.k, nil, nil)
 	for i := basePort; i < basePort+n; i++ {
 		fp.Require().NoError(
-			view.RingAdd(newaddr(i), api.NewNodeId()),
+			view.RingAdd(ctx, newaddr(i), api.NewNodeId()),
 		)
 	}
 	return view
@@ -185,19 +186,19 @@ func (fp *fastPaxosSuite) createAndStartService(name string, addr *remoting.Endp
 	require := fp.Require()
 
 	node := api.NewNode(addr, nil)
-	cset := transport.DefaultSettings(node)
+	cset := transport.DefaultSettings()
 	client := transport.NewGRPCClient(&cset, grpc.WithInsecure())
 
-	log := fp.log.With().Str("logger", name).Logger()
+	log := fp.log.With().Str("instance", name).Logger()
 	svc := New(
+		log.WithContext(context.Background()),
 		node,
-		NewMultiNodeCutDetector(log, fp.k, fp.h, fp.l),
+		NewMultiNodeCutDetector(fp.k, fp.h, fp.l),
 		view,
-		broadcast.UnicastToAll(log, client),
-		edgefailure.PingPong(log, client),
+		broadcast.UnicastToAll(client),
+		edgefailure.PingPong(client),
 		500*time.Millisecond,
 		client,
-		log,
 		NewEventSubscriptions(),
 	)
 	require.NoError(svc.Init())

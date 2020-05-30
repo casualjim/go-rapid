@@ -5,11 +5,12 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/Workiva/go-datastructures/trie/ctrie"
+
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/cornelk/hashmap"
 	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/api"
@@ -18,8 +19,8 @@ import (
 )
 
 type ConsensusRegistry struct {
-	data *hashmap.HashMap
-
+	//data *hashmap.HashMap
+	data *ctrie.Ctrie
 	//data map[*remoting.Endpoint]*Fast
 	//lock sync.Mutex
 }
@@ -33,7 +34,7 @@ func (c *ConsensusRegistry) key(ep *remoting.Endpoint) []byte {
 }
 
 func (c *ConsensusRegistry) Get(ep *remoting.Endpoint) *Fast {
-	v, ok := c.data.Get(c.key(ep))
+	v, ok := c.data.Lookup(c.key(ep))
 	if !ok {
 		return nil
 	}
@@ -41,9 +42,10 @@ func (c *ConsensusRegistry) Get(ep *remoting.Endpoint) *Fast {
 }
 
 func (c *ConsensusRegistry) Each(handle func(*remoting.Endpoint, *Fast)) {
-	for entry := range c.data.Iter() {
+
+	for entry := range c.data.Iterator(nil) {
 		var k remoting.Endpoint
-		if err := proto.Unmarshal(entry.Key.([]byte), &k); err != nil {
+		if err := proto.Unmarshal(entry.Key, &k); err != nil {
 			panic(err)
 		}
 		handle(&k, entry.Value.(*Fast))
@@ -51,23 +53,23 @@ func (c *ConsensusRegistry) Each(handle func(*remoting.Endpoint, *Fast)) {
 }
 
 func (c *ConsensusRegistry) GetOrSet(ep *remoting.Endpoint, loader func(ep *remoting.Endpoint) *Fast) *Fast {
-	v, ok := c.data.Get(c.key(ep))
+	v, ok := c.data.Lookup(c.key(ep))
 	if ok {
 		return v.(*Fast)
 	}
 	f := loader(ep)
-	c.data.Set(ep, f)
+	c.Set(ep, f)
 	return f
 }
 
 func (c *ConsensusRegistry) Set(ep *remoting.Endpoint, cc *Fast) {
-	c.data.Set(c.key(ep), cc)
+	c.data.Insert(c.key(ep), cc)
 }
 
 func (c *ConsensusRegistry) EachKey(handle func(*remoting.Endpoint)) {
-	for entry := range c.data.Iter() {
+	for entry := range c.data.Iterator(nil) {
 		var k remoting.Endpoint
-		if err := proto.Unmarshal(entry.Key.([]byte), &k); err != nil {
+		if err := proto.Unmarshal(entry.Key, &k); err != nil {
 			panic(err)
 		}
 		handle(&k)
@@ -76,7 +78,7 @@ func (c *ConsensusRegistry) EachKey(handle func(*remoting.Endpoint)) {
 
 func (c *ConsensusRegistry) First() *Fast {
 	var f *Fast
-	for v := range c.data.Iter() {
+	for v := range c.data.Iterator(nil) {
 		if f == nil {
 			f = v.Value.(*Fast)
 		}

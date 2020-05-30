@@ -1,6 +1,7 @@
 package rapid
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -66,7 +67,7 @@ func mkAddr(port int) *remoting.Endpoint {
 }
 
 func (c *testClusters) CreateN(numNodes int, seedEndpoint *remoting.Endpoint) {
-	seed := c.BuildCluster(seedEndpoint, nil, WithLogger(c.log.With().Str("logger", "seed").Logger()))
+	seed := c.BuildCluster(seedEndpoint, nil, c.log.With().Str("logger", "seed").Logger())
 	c.require.NoError(seed.Start())
 	c.instances.Set(c.key(seedEndpoint), seed)
 	c.require.Equal(1, seed.Size())
@@ -82,7 +83,7 @@ func (c *testClusters) key(ep *remoting.Endpoint) []byte {
 	return b
 }
 
-func (c *testClusters) BuildCluster(endpoint *remoting.Endpoint, seedEndpoint *remoting.Endpoint, options ...Option) *Cluster {
+func (c *testClusters) BuildCluster(endpoint *remoting.Endpoint, seedEndpoint *remoting.Endpoint, lg zerolog.Logger, options ...Option) *Cluster {
 	var opts []Option
 	opts = append(append(opts, c.options...), options...)
 
@@ -90,7 +91,7 @@ func (c *testClusters) BuildCluster(endpoint *remoting.Endpoint, seedEndpoint *r
 		opts = append(opts, WithSeedNodes(seedEndpoint))
 	}
 
-	cl, err := New(api.NewNode(endpoint, nil), opts...)
+	cl, err := New(lg.WithContext(context.Background()), api.NewNode(endpoint, nil), opts...)
 	c.require.NoError(err)
 	c.require.NoError(cl.Init())
 	return cl
@@ -105,7 +106,7 @@ func (c *testClusters) ExtendClusterN(numNodes int, seedEndpoint *remoting.Endpo
 			defer wg.Done()
 
 			joiningEndpoint := mkAddr(freeport.MustNext())
-			nonSeed := c.BuildCluster(joiningEndpoint, seedEndpoint, WithLogger(log))
+			nonSeed := c.BuildCluster(joiningEndpoint, seedEndpoint, log)
 			c.require.NoError(nonSeed.Start())
 			c.instances.Set(c.key(joiningEndpoint), nonSeed)
 		}(i, c.log.With().Str("logger", fmt.Sprintf("joiner-%d", c.instances.Len())).Str("component", fmt.Sprintf("joiner-%d", i+1)).Logger())

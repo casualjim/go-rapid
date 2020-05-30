@@ -1,7 +1,6 @@
 package epchecksum
 
 import (
-	"encoding/binary"
 	"reflect"
 	"unsafe"
 
@@ -10,13 +9,7 @@ import (
 )
 
 func Checksum(ep *remoting.Endpoint, seed int) uint64 {
-	hash := xxhash.Checksum64S(ep.Hostname, uint64(seed)) * 31
-	bh := reflect.SliceHeader{
-		Data: uintptr(unsafe.Pointer(&ep.Port)),
-		Len:  binary.Size(uint64(ep.Port)),
-		Cap:  binary.Size(uint64(ep.Port)),
-	}
-	buf := *(*[]byte)(unsafe.Pointer(&bh))
-	hash += xxhash.Checksum64S(buf, uint64(seed))
-	return hash
+	cs := xxhash.Checksum64S(ep.Hostname, uint64(seed))
+	hdr := reflect.SliceHeader{Data: uintptr(unsafe.Pointer(&ep.Port)), Len: 4, Cap: 4}
+	return cs*31 + xxhash.Checksum64S(*(*[]byte)(unsafe.Pointer(&hdr)), uint64(seed))
 }

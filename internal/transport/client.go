@@ -9,7 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/casualjim/go-rapid/api"
+	"google.golang.org/grpc/metadata"
+
+	"github.com/segmentio/ksuid"
+
 	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/hlts2/gocache"
 	"github.com/rs/zerolog"
@@ -21,10 +24,8 @@ import (
 	"github.com/casualjim/go-rapid/remoting"
 )
 
-func DefaultSettings(node api.Node) Settings {
+func DefaultSettings() Settings {
 	return Settings{
-		Me:             node,
-		Log:            zerolog.Nop(),
 		GRPCRetries:    5,
 		DefaultTimeout: time.Second,
 		JoinTimeout:    5 * time.Second,
@@ -33,8 +34,6 @@ func DefaultSettings(node api.Node) Settings {
 }
 
 type Settings struct {
-	Me                   api.Node
-	Log                  zerolog.Logger
 	GRPCRetries          int
 	DefaultTimeout       time.Duration
 	JoinTimeout          time.Duration
@@ -101,20 +100,46 @@ type Client struct {
 	config  *Settings
 }
 
-func (d *Client) getClient(endpoint *remoting.Endpoint) (remoting.MembershipServiceClient, error) {
-	conn, err := d.clients.GetOrLoad(endpoint, createConnection(d.config.Log, d.config.CACertificate == ""))
+func (d *Client) getClient(ctx context.Context, endpoint *remoting.Endpoint) (remoting.MembershipServiceClient, error) {
+	conn, err := d.clients.GetOrLoad(endpoint, createConnection(ctx, d.config.CACertificate == ""))
 	if err != nil {
 		return nil, err
 	}
 	return remoting.NewMembershipServiceClient(conn), nil
 }
 
-func epstr(tgt *remoting.Endpoint) string {
-	return fmt.Sprintf("%s:%d", tgt.Hostname, tgt.Port)
+type requestIDKey struct{}
+
+const reqIDHeader string = "x-rapid-request-id"
+
+func EnsureRequestID(ctx context.Context) context.Context {
+	var k requestIDKey
+	val, ok := ctx.Value(k).(string)
+	if !ok || val == "" {
+		return CreateNewRequestID(ctx)
+	}
+	return ctx
+}
+
+func CreateNewRequestID(ctx context.Context) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, ksuid.New().String())
+}
+
+func CtxCopyRequestID(ctx context.Context) context.Context {
+	return context.WithValue(context.Background(), requestIDKey{}, RequestIDFromContext(ctx))
+}
+
+func RequestIDFromContext(ctx context.Context) string {
+	rid, ok := ctx.Value(requestIDKey{}).(string)
+	if !ok {
+		return ""
+	}
+	return rid
 }
 
 func (d *Client) Do(ctx context.Context, target *remoting.Endpoint, in *remoting.RapidRequest) (*remoting.RapidResponse, error) {
-	cl, err := d.getClient(target)
+	ctx = EnsureRequestID(ctx)
+	cl, err := d.getClient(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -123,18 +148,20 @@ func (d *Client) Do(ctx context.Context, target *remoting.Endpoint, in *remoting
 	timeout := d.config.Timeout(in)
 	retries := d.config.GRPCRetries
 	tn := reflect.Indirect(reflect.ValueOf(in.GetContent())).Type().Name()
-	log := d.config.Log.With().
-		Str("addr", d.config.Me.String()).
-		Str("target", epstr(target)).
+
+	log := zerolog.Ctx(ctx).With().
 		Dur("timeout", timeout).
 		Int("retries", retries).
 		Str("request", tn).
+		Str("request_id", RequestIDFromContext(ctx)).
 		Logger()
 	to, cancel := context.WithTimeout(ctx, time.Duration(retries)*timeout)
 	defer cancel()
 
 	log.Debug().Msg("sending request")
-	resp, err := cl.SendRequest(to, in, grpc_retry.WithMax(uint(retries)), grpc_retry.WithPerRetryTimeout(timeout))
+	resp, err := cl.SendRequest(to, in,
+		grpc_retry.WithMax(uint(retries)),
+		grpc_retry.WithPerRetryTimeout(timeout))
 	if err != nil {
 		log.Err(err).Msg("received grpc error")
 		return nil, err
@@ -144,7 +171,8 @@ func (d *Client) Do(ctx context.Context, target *remoting.Endpoint, in *remoting
 }
 
 func (d *Client) DoBestEffort(ctx context.Context, target *remoting.Endpoint, in *remoting.RapidRequest) (*remoting.RapidResponse, error) {
-	cl, err := d.getClient(target)
+	ctx = EnsureRequestID(ctx)
+	cl, err := d.getClient(ctx, target)
 	if err != nil {
 		return nil, err
 	}
@@ -152,11 +180,11 @@ func (d *Client) DoBestEffort(ctx context.Context, target *remoting.Endpoint, in
 	start := time.Now()
 	timeout := d.config.Timeout(in)
 	tn := reflect.Indirect(reflect.ValueOf(in.GetContent())).Type().Name()
-	log := d.config.Log.With().
-		Str("addr", d.config.Me.String()).
-		Str("target", epstr(target)).
+
+	log := zerolog.Ctx(ctx).With().
 		Dur("timeout", timeout).
 		Str("request", tn).
+		Str("request_id", RequestIDFromContext(ctx)).
 		Logger()
 
 	toctx, cancel := context.WithTimeout(ctx, timeout)
@@ -189,15 +217,17 @@ func (d *Client) Close() error {
 // 	return d.DialContext, nil
 // }
 
-func createConnection(log zerolog.Logger, insecure bool) clientLoader {
+func createConnection(ctx context.Context, insecure bool) clientLoader {
 	return func(endpoint *remoting.Endpoint, opts ...grpc.DialOption) (*grpc.ClientConn, error) {
 		if insecure {
 			opts = append(opts, grpc.WithInsecure())
 		}
 
+		hn := net.JoinHostPort(string(endpoint.Hostname), strconv.Itoa(int(endpoint.Port)))
+		log := zerolog.Ctx(ctx).With().Str("dst", hn).Logger()
 		return grpc.DialContext(
-			context.TODO(),
-			net.JoinHostPort(string(endpoint.Hostname), strconv.Itoa(int(endpoint.Port))),
+			log.WithContext(ctx),
+			hn,
 			append(opts,
 				grpc.WithChainStreamInterceptor(
 					streamClientInterceptor(log),
@@ -217,7 +247,8 @@ func unaryClientInterceptor(logger zerolog.Logger) grpc.UnaryClientInterceptor {
 	return func(ctx context.Context, method string, req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
 		lg := newClientLoggerFields(ctx, logger, method)
 		startTime := time.Now()
-		err := invoker(lg.WithContext(ctx), method, req, reply, cc, opts...)
+		toctx := metadata.AppendToOutgoingContext(lg.WithContext(ctx), reqIDHeader, RequestIDFromContext(ctx))
+		err := invoker(toctx, method, req, reply, cc, opts...)
 		logFinalClientLine(lg, startTime, err, "finished client unary call")
 		return err
 	}
@@ -228,7 +259,8 @@ func streamClientInterceptor(logger zerolog.Logger) grpc.StreamClientInterceptor
 	return func(ctx context.Context, desc *grpc.StreamDesc, cc *grpc.ClientConn, method string, streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream, error) {
 		lg := newClientLoggerFields(ctx, logger, method)
 		startTime := time.Now()
-		clientStream, err := streamer(lg.WithContext(ctx), desc, cc, method, opts...)
+		toctx := metadata.AppendToOutgoingContext(lg.WithContext(ctx), reqIDHeader, RequestIDFromContext(ctx))
+		clientStream, err := streamer(toctx, desc, cc, method, opts...)
 		logFinalClientLine(lg, startTime, err, "finished client streaming call")
 		return clientStream, err
 	}
@@ -238,19 +270,25 @@ func logFinalClientLine(logger zerolog.Logger, startTime time.Time, err error, m
 	code := status.Code(err)
 	le := logger.WithLevel(clientCodeToLevel(code))
 	if le.Enabled() {
-		le.Err(err).Str("grpc.code", code.String()).Msg(msg)
+		le.Err(err).Str("grpc.code", code.String()).Dur("grpc.duration", time.Since(startTime)).Msg(msg)
 	}
 }
 
 func newClientLoggerFields(ctx context.Context, log zerolog.Logger, fullMethodString string) zerolog.Logger {
 	service := path.Dir(fullMethodString)[1:]
 	method := path.Base(fullMethodString)
-	return log.With().
+
+	builder := log.With().
 		Str("system", "grpc").
 		Str("span.kind", "client").
 		Str("grpc.service", service).
-		Str("grpc.method", method).
-		Logger()
+		Str("grpc.method", method)
+
+	if reqID, ok := ctx.Value(requestIDKey{}).(string); ok {
+		builder = builder.Str("request_id", reqID)
+	}
+
+	return builder.Logger()
 }
 
 // clientCodeToLevel is the default implementation of gRPC return codes to log levels for client side.
