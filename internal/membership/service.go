@@ -13,7 +13,6 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
-	"github.com/nayuta87/queue"
 	"github.com/rs/zerolog"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
@@ -552,17 +551,9 @@ func (s *Service) handleBatchedAlertMessage(ctx context.Context, req *remoting.B
 	log.Debug().Msg("announcing proposal")
 	s.announcedProposal.Set(false, true)
 
-	var nodeStatusChangeList []api.StatusChange
-	q := s.subscriptions.get(api.ClusterEventViewChangeProposal)
-
-	if q != nil {
-		firstItem := q.Deq()
-		if firstItem != nil {
-			nodeStatusChangeList = s.createNodeStatusChangeList(ctx, proposal)
-		}
-		for v := firstItem; v != nil; v = q.Deq() {
-			v.(api.Subscriber).OnNodeStatusChange(ccid, nodeStatusChangeList)
-		}
+	if s.subscriptions.HasSubscriptions(api.ClusterEventViewChangeProposal) {
+		nodeStatusChangeList := s.createNodeStatusChangeList(ctx, proposal)
+		s.subscriptions.Trigger(api.ClusterEventViewChangeProposal, ccid, nodeStatusChangeList)
 	}
 	s.paxos.Load().(*paxos.Fast).Propose(ctx, proposal, 0)
 
@@ -612,58 +603,134 @@ func (s *Service) filterAlertMessage(ctx context.Context, batched *remoting.Batc
 }
 
 func NewEventSubscriptions() *EventSubscriptions {
-	return &EventSubscriptions{
-		ViewChangeProposals:     queue.NewQueue(),
-		ViewChange:              queue.NewQueue(),
-		ViewChangeOneStepFailed: queue.NewQueue(),
-		Kicked:                  queue.NewQueue(),
-	}
+	return &EventSubscriptions{}
 }
 
 type EventSubscriptions struct {
-	ViewChangeProposals *queue.Queue
+	viewChangeProposals  []api.Subscriber
+	viewChangeProposalsL sync.Mutex
 
-	ViewChange *queue.Queue
+	viewChange  []api.Subscriber
+	viewChangeL sync.Mutex
 
-	ViewChangeOneStepFailed *queue.Queue
+	viewChangeOneStepFailed  []api.Subscriber
+	viewChangeOneStepFailedL sync.Mutex
 
-	Kicked *queue.Queue
+	kicked  []api.Subscriber
+	kickedL sync.Mutex
 }
 
 func (e *EventSubscriptions) Register(evt api.ClusterEvent, sub api.Subscriber) {
 	switch evt {
 	case api.ClusterEventViewChangeProposal:
-		e.ViewChangeProposals.Enq(sub)
+		e.viewChangeProposalsL.Lock()
+		e.viewChangeProposals = append(e.viewChangeProposals, sub)
+		e.viewChangeProposalsL.Unlock()
 	case api.ClusterEventViewChange:
-		e.ViewChange.Enq(sub)
+		e.viewChangeL.Lock()
+		e.viewChange = append(e.viewChange, sub)
+		e.viewChangeL.Unlock()
 	case api.ClusterEventViewChangeOneStepFailed:
-		e.ViewChangeOneStepFailed.Enq(sub)
+		e.viewChangeOneStepFailedL.Lock()
+		e.viewChangeOneStepFailed = append(e.viewChangeOneStepFailed, sub)
+		e.viewChangeOneStepFailedL.Unlock()
 	case api.ClusterEventKicked:
-		e.Kicked.Enq(sub)
+		e.kickedL.Lock()
+		e.kicked = append(e.kicked, sub)
+		e.kickedL.Unlock()
 	}
+}
+
+func (e *EventSubscriptions) HasSubscriptions(evt api.ClusterEvent) bool {
+	switch evt {
+	case api.ClusterEventViewChangeProposal:
+		e.viewChangeProposalsL.Lock()
+		defer e.viewChangeProposalsL.Unlock()
+		return len(e.viewChangeProposals) > 0 && e.viewChangeProposals[0] != nil
+	case api.ClusterEventViewChange:
+		e.viewChangeL.Lock()
+		defer e.viewChangeL.Unlock()
+		return len(e.viewChange) > 0 && e.viewChange[0] != nil
+	case api.ClusterEventViewChangeOneStepFailed:
+		e.viewChangeOneStepFailedL.Lock()
+		defer e.viewChangeOneStepFailedL.Unlock()
+		return len(e.viewChangeOneStepFailed) > 0 && e.viewChangeOneStepFailed[0] != nil
+	case api.ClusterEventKicked:
+		e.kickedL.Lock()
+		defer e.kickedL.Unlock()
+		return len(e.kicked) > 0 && e.kicked[0] != nil
+	}
+	return false
+}
+
+func (e *EventSubscriptions) Peek(evt api.ClusterEvent) (api.Subscriber, bool) {
+	switch evt {
+	case api.ClusterEventViewChangeProposal:
+		e.viewChangeProposalsL.Lock()
+		defer e.viewChangeProposalsL.Unlock()
+		if len(e.viewChangeProposals) == 0 {
+			return nil, false
+		}
+		res := e.viewChangeProposals[0]
+		return res, true
+	case api.ClusterEventViewChange:
+		e.viewChangeL.Lock()
+		defer e.viewChangeL.Unlock()
+		if len(e.viewChange) == 0 {
+			return nil, false
+		}
+		res := e.viewChange[0]
+		return res, true
+	case api.ClusterEventViewChangeOneStepFailed:
+		e.viewChangeOneStepFailedL.Lock()
+		defer e.viewChangeOneStepFailedL.Unlock()
+
+		if len(e.viewChangeOneStepFailed) == 0 {
+			return nil, false
+		}
+		res := e.viewChangeOneStepFailed[0]
+		return res, true
+	case api.ClusterEventKicked:
+		e.kickedL.Lock()
+		defer e.kickedL.Unlock()
+
+		if len(e.kicked) == 0 {
+			return nil, false
+		}
+		res := e.kicked[0]
+		return res, true
+	}
+	return nil, false
 }
 
 func (e *EventSubscriptions) Trigger(evt api.ClusterEvent, config int64, changes []api.StatusChange) {
-	q := e.get(evt)
-	if q == nil {
-		return
-	}
-
-	for v := q.Deq(); v != nil; v = q.Deq() {
-		v.(api.Subscriber).OnNodeStatusChange(config, changes)
+	for _, subscriber := range e.getL(evt) {
+		subscriber.OnNodeStatusChange(config, changes)
 	}
 }
 
-func (e *EventSubscriptions) get(evt api.ClusterEvent) *queue.Queue {
+func (e *EventSubscriptions) getL(evt api.ClusterEvent) []api.Subscriber {
 	switch evt {
 	case api.ClusterEventViewChangeProposal:
-		return e.ViewChangeProposals
+		e.viewChangeProposalsL.Lock()
+		res := append([]api.Subscriber{}, e.viewChangeProposals...)
+		e.viewChangeProposalsL.Unlock()
+		return res
 	case api.ClusterEventViewChange:
-		return e.ViewChange
+		e.viewChangeL.Lock()
+		res := append([]api.Subscriber{}, e.viewChange...)
+		e.viewChangeL.Unlock()
+		return res
 	case api.ClusterEventViewChangeOneStepFailed:
-		return e.ViewChangeOneStepFailed
+		e.viewChangeOneStepFailedL.Lock()
+		res := append([]api.Subscriber{}, e.viewChangeOneStepFailed...)
+		e.viewChangeOneStepFailedL.Unlock()
+		return res
 	case api.ClusterEventKicked:
-		return e.Kicked
+		e.kickedL.Lock()
+		res := append([]api.Subscriber{}, e.kicked...)
+		e.kickedL.Unlock()
+		return res
 	}
 	return nil
 }

@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/rs/zerolog"
@@ -206,8 +207,10 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 
 	p.lock.Lock()
 	lg := zerolog.Ctx(ctx)
-	if compareRanks(p.rnd, msg.GetRank()) < 0 {
-		p.rnd = msg.GetRank()
+	rnd := proto.Clone(p.rnd).(*remoting.Rank)
+	if compareRanks(rnd, msg.GetRank()) < 0 {
+		rnd = proto.Clone(msg.GetRank()).(*remoting.Rank)
+		p.rnd = rnd
 	} else {
 		lg.Debug().
 			Str("round", protojson.Format(p.rnd)).
@@ -225,7 +228,7 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 
 	req := &remoting.Phase1BMessage{
 		ConfigurationId: p.configurationID,
-		Rnd:             p.rnd,
+		Rnd:             rnd,
 		Sender:          p.myAddr,
 		Vrnd:            p.vrnd,
 		Vval:            p.vval,

@@ -221,10 +221,10 @@ func (f *Fast) Handle(ctx context.Context, req *remoting.RapidRequest) (*remotin
 
 var defaultResponse = &remoting.RapidResponse{}
 
-var rnd = rand.New(rand.NewSource(time.Now().Unix()))
+// var rnd = rand.New(rand.NewSource(time.Now().Unix()))
 
 func (f *Fast) randomDelay() time.Duration {
-	jitter := time.Duration(-float64(time.Second) * (math.Log(1-rnd.Float64()) * float64(time.Second)) / f.jitterRate)
+	jitter := time.Duration(-float64(time.Second) * (math.Log(1-rand.Float64()) * float64(time.Second)) / f.jitterRate)
 	return jitter + f.consensusFallbackTimeoutBaseDelay
 }
 
