@@ -18,6 +18,7 @@ import (
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/rs/zerolog"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/casualjim/go-rapid/api"
 
@@ -123,9 +124,9 @@ func NewClassic(opts ...Option) (*Classic, error) {
 
 	return &Classic{
 		config:          c,
-		rnd:             &remoting.Rank{},
-		vrnd:            &remoting.Rank{},
 		crnd:            &remoting.Rank{},
+		p2state:         &phase2State{},
+		hash:            epchecksum.Checksum(c.myAddr, 0),
 		acceptResponses: &responsesByRank{data: make(map[uint64]map[uint64]*remoting.Phase2BMessage)},
 		//acceptResponses: make(map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage),
 		//acceptReponses2: sled.New(),
@@ -141,45 +142,45 @@ func NewClassic(opts ...Option) (*Classic, error) {
 type Classic struct {
 	config
 
-	rnd             *remoting.Rank
-	vrnd            *remoting.Rank
-	vval            []*remoting.Endpoint
+	p2state *phase2State
+
 	phase1bMessages []*remoting.Phase1BMessage
-	//acceptResponses map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage
+	// acceptResponses map[*remoting.Rank]map[*remoting.Endpoint]*remoting.Phase2BMessage
 	acceptResponses *responsesByRank
 	// acceptReponses2 hashmap.HashMap
 
-	crnd *remoting.Rank
-	cval []*remoting.Endpoint
-
+	crnd    *remoting.Rank
+	cval    []*remoting.Endpoint
+	hash    uint64
 	decided uint32
 
-	lock sync.Mutex
+	lock deadlock.Mutex
 }
 
 // At coordinator, start a classic round. We ensure that even if round numbers are not unique, the
 // "rank" = (round, nodeId) is unique by using unique node IDs.
 func (p *Classic) startPhase1a(ctx context.Context, round int32) {
 	p.lock.Lock()
-	if p.crnd.Round > round {
+	if p.crnd.GetRound() > round {
+		p.lock.Unlock()
 		return
 	}
 
 	lg := zerolog.Ctx(ctx)
 	addr := fmt.Sprintf("%s:%d", p.myAddr.Hostname, p.myAddr.Port)
-	hash := epchecksum.Checksum(p.myAddr, 0)
 
-	p.crnd = &remoting.Rank{Round: round, NodeIndex: int32(hash)}
-
+	// p.lock.Lock()
+	// p.crnd.Set(&remoting.Rank{Round: round, NodeIndex: int32(hash)})
+	p.crnd = &remoting.Rank{Round: round, NodeIndex: int32(p.hash)}
 	lg.Debug().Str("sender", addr).Str("round", protojson.Format(p.crnd)).Msg("Prepare called")
 	req := &remoting.Phase1AMessage{
 		ConfigurationId: p.configurationID,
 		Sender:          p.myAddr,
-		Rank:            p.crnd,
+		Rank:            proto.Clone(p.crnd).(*remoting.Rank),
 	}
+	lg.Debug().Str("msg", protojson.Format(req)).Msg("broadcasting phase 1a message")
 	p.lock.Unlock()
 
-	lg.Debug().Str("msg", protojson.Format(req)).Msg("broadcasting phase 1a message")
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
@@ -205,35 +206,17 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 		return
 	}
 
-	p.lock.Lock()
-	lg := zerolog.Ctx(ctx)
-	rnd := proto.Clone(p.rnd).(*remoting.Rank)
-	if compareRanks(rnd, msg.GetRank()) < 0 {
-		rnd = proto.Clone(msg.GetRank()).(*remoting.Rank)
-		p.rnd = rnd
-	} else {
-		lg.Debug().
-			Str("round", protojson.Format(p.rnd)).
-			Str("msg", protojson.Format(msg)).
-			Msg("rejecting prepare message from lower rank")
-		p.lock.Unlock()
-		return
-	}
-	p.lock.Unlock()
-	vvalstr := make([]string, len(p.vval))
-	for i := range p.vval {
-		vvalstr[i] = protojson.Format(p.vval[i])
-	}
-	lg.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("sending back")
-
+	// lg := zerolog.Ctx(ctx)
+	// p.lock.Lock()
+	rnd, vrnd, vval := p.p2state.GetOrSet(msg.GetRank())
 	req := &remoting.Phase1BMessage{
 		ConfigurationId: p.configurationID,
 		Rnd:             rnd,
 		Sender:          p.myAddr,
-		Vrnd:            p.vrnd,
-		Vval:            p.vval,
+		Vrnd:            vrnd,
+		Vval:            vval,
 	}
-	//p.lock.Unlock()
+	// p.lock.Unlock()
 	write := p.resultLogger(ctx, "phase 1b message")
 	write(p.client.Do(ctx, msg.GetSender(), remoting.WrapRequest(req)))
 }
@@ -241,12 +224,11 @@ func (p *Classic) handlePhase1a(ctx context.Context, msg *remoting.Phase1AMessag
 // At coordinator, collect phase1b messages from acceptors to learn whether they have already voted for
 // any values, and if a value might have been chosen.
 func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessage) {
-	p.lock.Lock()
 	if msg.GetConfigurationId() != p.configurationID {
-		p.lock.Unlock()
 		return
 	}
 
+	p.lock.Lock()
 	// Only handle responses from crnd == i
 	if compareRanks(p.crnd, msg.GetRnd()) != 0 {
 		p.lock.Unlock()
@@ -256,6 +238,7 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 	lg := zerolog.Ctx(ctx)
 	lg.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase1b message")
 
+	// p.lock.Lock()
 	p.phase1bMessages = append(p.phase1bMessages, msg)
 	if len(p.phase1bMessages) <= (p.membershipSize / 2) {
 		p.lock.Unlock()
@@ -276,20 +259,72 @@ func (p *Classic) handlePhase1b(ctx context.Context, msg *remoting.Phase1BMessag
 		p.lock.Unlock()
 		return
 	}
+
 	p.cval = proposal
 	req := &remoting.Phase2AMessage{
 		Sender:          p.myAddr,
 		ConfigurationId: p.configurationID,
-		Rnd:             p.crnd,
-		Vval:            proposal,
+		Rnd:             proto.Clone(p.crnd).(*remoting.Rank),
+		Vval:            append([]*remoting.Endpoint{}, proposal...),
 	}
-
 	p.lock.Unlock()
+
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
 func rnkEquals(left, right *remoting.Rank) bool {
 	return left.GetRound() == right.GetRound() && left.GetNodeIndex() == right.GetNodeIndex()
+}
+
+type phase2State struct {
+	l    sync.Mutex
+	vrnd *remoting.Rank
+	rnd  *remoting.Rank
+	vval []*remoting.Endpoint
+}
+
+func (st *phase2State) Set(rank *remoting.Rank, vval []*remoting.Endpoint) (*remoting.Rank, []*remoting.Endpoint) {
+	st.l.Lock()
+	defer st.l.Unlock()
+
+	if compareRanks(st.rnd, rank) > 0 || rnkEquals(st.vrnd, rank) {
+		// p.lock.Unlock()
+		return nil, nil
+	}
+
+	st.rnd = rank
+	st.vrnd = rank
+	st.vval = vval
+
+	return rank, vval
+}
+
+func (st *phase2State) Init(vote []*remoting.Endpoint) {
+	st.l.Lock()
+	defer st.l.Unlock()
+
+	if st.rnd.GetRound() > 1 {
+		return
+	}
+
+	if st.rnd == nil {
+		st.rnd = &remoting.Rank{}
+	}
+	st.rnd.NodeIndex = 1
+	st.rnd.Round = 1
+	st.vrnd = st.rnd
+	st.vval = vote
+}
+
+func (st *phase2State) GetOrSet(rank *remoting.Rank) (*remoting.Rank, *remoting.Rank, []*remoting.Endpoint) {
+	st.l.Lock()
+	defer st.l.Unlock()
+
+	if compareRanks(st.rnd, rank) < 0 {
+		st.rnd = rank
+	}
+
+	return st.rnd, st.vrnd, st.vval
 }
 
 // At acceptor, handle an accept message from a coordinator.
@@ -300,24 +335,20 @@ func (p *Classic) handlePhase2a(ctx context.Context, msg *remoting.Phase2AMessag
 	lg := zerolog.Ctx(ctx)
 	lg.Debug().Str("msg", protojson.Format(msg)).Msg("handling phase2a message")
 
-	// if compareRanks(p.rnd, msg.GetRnd()) > 0 || p.vrnd.Equal(msg.GetRnd()) {
-	if compareRanks(p.rnd, msg.GetRnd()) > 0 || rnkEquals(p.vrnd, msg.GetRnd()) {
+	rnd, vval := p.p2state.Set(msg.GetRnd(), msg.GetVval())
+	if vval == nil && rnd == nil {
 		return
 	}
 
-	p.lock.Lock()
-	p.rnd = msg.GetRnd()
-	p.vrnd = msg.GetRnd()
-	p.vval = msg.GetVval()
-	p.lock.Unlock()
-	lg.Debug().Str("vval", endpointsStr(p.vval)).Str("vrnd", protojson.Format(p.vrnd)).Msg("accepted value")
+	lg.Debug().Str("vval", endpointsStr(vval)).Str("vrnd", protojson.Format(rnd)).Msg("accepted value")
 
 	req := &remoting.Phase2BMessage{
 		ConfigurationId: p.configurationID,
-		Rnd:             msg.GetRnd(),
+		Rnd:             rnd,
 		Sender:          p.myAddr,
-		Endpoints:       p.vval,
+		Endpoints:       vval,
 	}
+	// p.lock.Unlock()
 	p.broadcaster.Broadcast(context.Background(), remoting.WrapRequest(req))
 }
 
@@ -354,21 +385,8 @@ func (p *Classic) handlePhase2b(ctx context.Context, msg *remoting.Phase2BMessag
 // This is how we're notified that a fast round is initiated. Invoked by a FastPaxos instance. This
 // represents the logic at an acceptor receiving a phase2a message directly.
 func (p *Classic) registerFastRoundVote(ctx context.Context, vote []*remoting.Endpoint) {
-	p.lock.Lock()
-	defer p.lock.Unlock()
 	// Do not participate in our only fast round if we are already participating in a classic round.
-	if p.rnd.GetRound() > 1 {
-		return
-	}
-
-	// This is the 1st round in the consensus instance, is always a fast round, and is always the *only* fast round.
-	// If this round does not succeed and we fallback to a classic round, we start with round number 2
-	// and each node sets its node-index as the hash of its hostname. Doing so ensures that all classic
-	// rounds initiated by any host is higher than the fast round, and there is an ordering between rounds
-	// initiated by different endpoints.
-	p.rnd = &remoting.Rank{Round: 1, NodeIndex: 1}
-	p.vrnd = p.rnd
-	p.vval = vote
+	p.p2state.Init(vote)
 
 	zerolog.Ctx(ctx).Debug().Str("vote", endpointsStr(vote)).Msg("voted in fast round for proposal")
 }
@@ -505,7 +523,7 @@ func (p *Classic) resultLogger(ctx context.Context, prefix string) func(*remotin
 type responsesByRank struct {
 	// rank -> endpoint -> message
 	data map[uint64]map[uint64]*remoting.Phase2BMessage
-	lock sync.Mutex
+	lock deadlock.Mutex
 }
 
 func (c *responsesByRank) AddAndCount(rank *remoting.Rank, msg *remoting.Phase2BMessage) int {

@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/rs/zerolog"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 
@@ -56,9 +57,12 @@ func New(
 ) *Service {
 
 	return &Service{
-		me:                      addr,
-		ctx:                     ctx,
-		broadcaster:             bc,
+		me:          addr,
+		ctx:         ctx,
+		broadcaster: bc,
+		joiners: &joinerData{
+			data: make(map[uint64]joiner),
+		},
 		view:                    view,
 		client:                  client,
 		cutDetector:             cutDetector,
@@ -78,7 +82,7 @@ type Service struct {
 	ctx context.Context
 
 	updateLock       sync.RWMutex
-	joiners          joinerData
+	joiners          *joinerData
 	joinersToRespond *joiners
 	client           api.Client
 
@@ -248,9 +252,9 @@ func (s *Service) onDecideViewChange(ctx context.Context, proposal []*remoting.E
 			continue
 		}
 
-		joiner := s.joiners.Del(endpoint)
+		joiner, deleted := s.joiners.Del(endpoint)
 		var md *remoting.Metadata
-		if joiner != nil {
+		if deleted {
 			lg.Debug().Str("endpoint", endpoint.String()).Msg("adding to ring")
 			if err := s.view.RingAdd(ctx, endpoint, joiner.NodeID); err != nil {
 				s.updateLock.Unlock()
@@ -608,16 +612,16 @@ func NewEventSubscriptions() *EventSubscriptions {
 
 type EventSubscriptions struct {
 	viewChangeProposals  []api.Subscriber
-	viewChangeProposalsL sync.Mutex
+	viewChangeProposalsL deadlock.Mutex
 
 	viewChange  []api.Subscriber
-	viewChangeL sync.Mutex
+	viewChangeL deadlock.Mutex
 
 	viewChangeOneStepFailed  []api.Subscriber
-	viewChangeOneStepFailedL sync.Mutex
+	viewChangeOneStepFailedL deadlock.Mutex
 
 	kicked  []api.Subscriber
-	kickedL sync.Mutex
+	kickedL deadlock.Mutex
 }
 
 func (e *EventSubscriptions) Register(evt api.ClusterEvent, sub api.Subscriber) {
@@ -767,7 +771,7 @@ func epStr(eps ...*remoting.Endpoint) string {
 }
 
 type joiners struct {
-	lock        sync.Mutex
+	lock        deadlock.Mutex
 	toRespondTo map[uint64]chan chan *remoting.RapidResponse
 	//data sync.Map
 }
@@ -829,7 +833,8 @@ type joiner struct {
 }
 
 type joinerData struct {
-	data sync.Map
+	l    deadlock.RWMutex
+	data map[uint64]joiner
 }
 
 func (j *joinerData) cs(key *remoting.Endpoint) uint64 {
@@ -837,33 +842,42 @@ func (j *joinerData) cs(key *remoting.Endpoint) uint64 {
 }
 
 func (j *joinerData) Set(key *remoting.Endpoint, value joiner) {
-	j.data.Store(j.cs(key), value)
+	j.l.Lock()
+	j.data[j.cs(key)] = value
+	j.l.Unlock()
 }
 
 func (j *joinerData) Get(key *remoting.Endpoint) *joiner {
-	v, ok := j.data.Load(j.cs(key))
-	if !ok {
-		return nil
-	}
-	jv := v.(joiner)
-	return &jv
-}
+	j.l.RLock()
+	v, ok := j.data[j.cs(key)]
+	j.l.RUnlock()
 
-func (j *joinerData) Del(key *remoting.Endpoint) *joiner {
-	csk := j.cs(key)
-	prev, ok := j.data.Load(csk)
 	if !ok {
 		return nil
 	}
-	j.data.Delete(csk)
-	v := prev.(joiner)
 	return &v
 }
 
+func (j *joinerData) Del(key *remoting.Endpoint) (joiner, bool) {
+	csk := j.cs(key)
+	j.l.Lock()
+	defer j.l.Unlock()
+
+	prev, ok := j.data[csk]
+	if !ok {
+		return joiner{}, false
+	}
+	delete(j.data, csk)
+	return prev, true
+}
+
 func (j *joinerData) GetOK(key *remoting.Endpoint) (joiner, bool) {
-	v, ok := j.data.Load(j.cs(key))
+	j.l.RLock()
+	defer j.l.RUnlock()
+
+	v, ok := j.data[j.cs(key)]
 	if ok {
-		return v.(joiner), ok
+		return v, ok
 	}
 	return joiner{}, false
 }

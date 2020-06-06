@@ -121,8 +121,8 @@ func (u *unicastFiltered) Broadcast(ctx context.Context, req *remoting.RapidRequ
 		}
 	}
 
-	lg.Debug().Int("member_count", len(u.members)).Str("alert", prototext.Format(req)).Msg("broadcasting")
 	u.RLock()
+	lg.Debug().Int("member_count", len(u.members)).Str("alert", prototext.Format(req)).Msg("broadcasting")
 	for _, rec := range u.members {
 		recipient := rec
 		if u.Filter(recipient) {

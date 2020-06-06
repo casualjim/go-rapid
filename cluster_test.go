@@ -172,6 +172,7 @@ func devLogger(t testing.TB) zerolog.Logger {
 }
 
 func TestCluster_SingleNodeJoinsThroughSeed(t *testing.T) {
+	t.Skip()
 	var (
 		clusters     = newTestClusters(t, false)
 		seedEndpoint = mkAddr(freeport.MustNext())

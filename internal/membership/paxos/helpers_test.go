@@ -3,9 +3,9 @@ package paxos
 import (
 	"context"
 	"errors"
-	"sync"
 
 	"github.com/Workiva/go-datastructures/trie/ctrie"
+	"github.com/sasha-s/go-deadlock"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -22,7 +22,7 @@ type ConsensusRegistry struct {
 	//data *hashmap.HashMap
 	data *ctrie.Ctrie
 	//data map[*remoting.Endpoint]*Fast
-	//lock sync.Mutex
+	//lock deadlock.Mutex
 }
 
 func (c *ConsensusRegistry) key(ep *remoting.Endpoint) []byte {
@@ -118,7 +118,7 @@ func (d *DirectBroadcaster) Stop() {}
 
 type DirectClient struct {
 	paxosInstances *ConsensusRegistry
-	lock           sync.Mutex
+	lock           deadlock.Mutex
 }
 
 func (d *DirectClient) Do(ctx context.Context, target *remoting.Endpoint, in *remoting.RapidRequest) (*remoting.RapidResponse, error) {

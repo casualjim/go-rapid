@@ -4,9 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	golog "log"
+	"net/http"
 	"os"
+	"os/signal"
+	"runtime"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -15,6 +18,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+
+	_ "net/http/pprof"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/internal/broadcast"
@@ -26,6 +31,43 @@ import (
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 )
+
+func TestMain(m *testing.M) {
+	go func() {
+		sigs := make(chan os.Signal, 1)
+		signal.Notify(sigs, syscall.SIGQUIT)
+		buf := make([]byte, 1<<20)
+		for {
+			<-sigs
+			stacklen := runtime.Stack(buf, true)
+			fmt.Println("=== received SIGQUIT ===")
+			fmt.Println("*** goroutine dump...")
+			fmt.Println(string(buf[:stacklen]))
+			fmt.Println("*** end")
+		}
+	}()
+	os.Exit(m.Run())
+}
+
+func init() {
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+}
+
+// func TestMain(m *testing.M) {
+// 	go func() {
+// 		sigs := make(chan os.Signal, 1)
+// 		signal.Notify(sigs, syscall.SIGQUIT)
+// 		buf := make([]byte, 1<<20)
+// 		for {
+// 			<-sigs
+// 			stacklen := runtime.Stack(buf, true)
+// 			log.Printf("=== received SIGQUIT ===\n*** goroutine dump...\n%s\n*** end\n", buf[:stacklen])
+// 		}
+// 	}()
+// 	os.Exit(m.Run())
+// }
 
 func TestService_Messaging(t *testing.T) {
 	suite.Run(t, &messagingSuite{
@@ -55,10 +97,10 @@ func (m *messagingSuite) SetupSuite() {
 	lgf, err := os.Create("joiner.fail.log")
 	m.Require().NoError(err)
 	l := zerolog.New(
-		zerolog.MultiLevelWriter(lgf, zerolog.NewConsoleWriter()),
+		lgf, //zerolog.MultiLevelWriter(lgf, zerolog.NewConsoleWriter()),
 	).With().Str("instance", "global").Timestamp().Logger()
 
-	golog.SetOutput(l)
+	// golog.SetOutput(l)
 	m.log = l
 	log.Logger = l
 }

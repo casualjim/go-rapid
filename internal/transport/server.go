@@ -10,7 +10,6 @@ import (
 	"path"
 	"reflect"
 	"runtime"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/libp2p/go-reuseport"
 	"github.com/rs/zerolog"
+	"github.com/sasha-s/go-deadlock"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
@@ -69,7 +69,7 @@ type Server struct {
 	l        net.Listener
 	grpc     *grpc.Server
 	memSvc   atomic.Value
-	msvcLock sync.Mutex
+	msvcLock deadlock.Mutex
 }
 
 var (

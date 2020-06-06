@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/casualjim/go-rapid/internal/transport"
+	"github.com/sasha-s/go-deadlock"
 	"google.golang.org/protobuf/encoding/prototext"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
@@ -58,6 +59,9 @@ func New(opts ...Option) (*Fast, error) {
 		votesReceived: &syncEndpointSet{
 			data: make(map[uint64]*remoting.Endpoint),
 		},
+		votesPerProposal: &counterMap{
+			data: make(map[uint64]*counter),
+		},
 		cancelClassic: func() {},
 	}
 
@@ -73,9 +77,8 @@ func New(opts ...Option) (*Fast, error) {
 
 	cons.classic = &Classic{
 		config:          c,
-		rnd:             &remoting.Rank{},
-		vrnd:            &remoting.Rank{},
 		crnd:            &remoting.Rank{},
+		p2state:         &phase2State{},
 		acceptResponses: &responsesByRank{data: make(map[uint64]map[uint64]*remoting.Phase2BMessage)},
 	}
 	return cons, nil
@@ -92,10 +95,10 @@ type Fast struct {
 	config
 
 	jitterRate       float64
-	votesPerProposal counterMap
+	votesPerProposal *counterMap
 	votesReceived    *syncEndpointSet
-	paxosLock        sync.Mutex
-	cancelLock       sync.Mutex
+	paxosLock        deadlock.Mutex
+	cancelLock       deadlock.Mutex
 	cancelClassic    func()
 	classic          *Classic
 	decided          int32
@@ -237,7 +240,8 @@ func (c *counter) IncrementAndGet() int {
 }
 
 type counterMap struct {
-	data sync.Map
+	l    sync.Mutex
+	data map[uint64]*counter
 }
 
 func (c *counterMap) IncrementAndGet(endpoints []*remoting.Endpoint) int {
@@ -245,9 +249,15 @@ func (c *counterMap) IncrementAndGet(endpoints []*remoting.Endpoint) int {
 		return 0
 	}
 
+	c.l.Lock()
 	key := makeVvalID(endpoints)
-	entry, _ := c.data.LoadOrStore(key, &counter{val: 0})
-	cntr := entry.(*counter)
+	cntr, found := c.data[key]
+	if !found {
+		cntr = &counter{val: 0}
+		c.data[key] = cntr
+	}
+	c.l.Unlock()
+
 	return cntr.IncrementAndGet()
 }
 

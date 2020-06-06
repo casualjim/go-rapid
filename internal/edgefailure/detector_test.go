@@ -113,11 +113,11 @@ func TestScheduler_CancelOne(t *testing.T) {
 	require.Equal(t, 2, count.Get())
 	require.Equal(t, 3, jobCount.Get())
 	require.Equal(t, 6, jobCount2.Get())
+	<-ctx.Done()
 	sched.lock.Lock()
 	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr, 0))
 	require.NotContains(t, sched.detectors, epchecksum.Checksum(addr2, 0))
 	sched.lock.Unlock()
-
 }
 
 func TestScheduler_CancelAll(t *testing.T) {

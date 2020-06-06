@@ -35,7 +35,7 @@ task "golang"
 progress "generating golang code"
 protoc \
   -I=remoting \
-  -I="$(go list -m -f '{{ .Dir }}' github.com/golang/protobuf)" \
+  -I="$(go list -m -f '{{ .Dir }}' google.golang.org/protobuf)" \
   --go_out=plugins=grpc:remoting \
   --grpchan_out=remoting \
   remoting/rapid.proto

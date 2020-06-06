@@ -3,10 +3,10 @@ package edgefailure
 import (
 	"context"
 	"errors"
-	"sync"
 	"time"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/casualjim/go-rapid/api"
 	"github.com/rs/zerolog"
@@ -41,7 +41,7 @@ type Scheduler struct {
 	interval  time.Duration
 	onFailure func() api.EdgeFailureCallback
 
-	lock      sync.Mutex
+	lock      deadlock.Mutex
 	detectors map[uint64]context.CancelFunc
 	cancelAll context.CancelFunc
 
