@@ -22,4 +22,5 @@ jobs:
         username: casualjim
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: casualjim/rapidbuilder
+        dockerfile: hack/builder/Dockerfile
 
