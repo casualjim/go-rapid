@@ -1,6 +1,7 @@
 name: Docker Image CI
 
 on:
+  push:
   schedule:
     - cron: '10 7 * * 5'
 
@@ -8,16 +9,17 @@ jobs:
 
   build:
 
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
 
     steps:
     - uses: actions/checkout@v2
     - name: Push to Docker Hub
       uses: docker/build-push-action@v1
       with:
+        tag_with_ref: true
+        tags: "latest"
+        add_git_labels: true
         username: ${{ secrets.DOCKER_USERNAME }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: casualjim/rapidbuilder
-        tag_with_ref: true
-        tags: "latest"
-    
+
