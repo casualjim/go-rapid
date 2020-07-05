@@ -1,7 +1,6 @@
 name: Docker Image CI
 
 on:
-  push:
   schedule:
     - cron: '10 7 * * 5'
 
@@ -19,8 +18,7 @@ jobs:
         tag_with_ref: true
         tags: "latest"
         add_git_labels: true
-        username: casualjim
+        username: ${{ secrets.DOCKER_USER }}
         password: ${{ secrets.DOCKER_PASSWORD }}
         repository: casualjim/rapidbuilder
         dockerfile: hack/builder/Dockerfile
-
