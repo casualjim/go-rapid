@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"sync"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/casualjim/go-rapid/remoting"
 )
@@ -33,7 +33,7 @@ type entry struct {
 // MetadataRegistry per-node metadata which is immutable.
 // These are simple tags like roles or other configuration parameters.
 type MetadataRegistry struct {
-	lock sync.RWMutex
+	lock deadlock.RWMutex
 	//table palm.BTree
 	table map[uint64]entry
 }

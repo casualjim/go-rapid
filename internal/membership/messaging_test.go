@@ -94,10 +94,10 @@ type messagingSuite struct {
 
 func (m *messagingSuite) SetupSuite() {
 	zerolog.TimeFieldFormat = time.RFC3339Nano
-	lgf, err := os.Create("joiner.fail.log")
-	m.Require().NoError(err)
+	//lgf, err := os.Create("joiner.fail.log")
+	//m.Require().NoError(err)
 	l := zerolog.New(
-		lgf, //zerolog.MultiLevelWriter(lgf, zerolog.NewConsoleWriter()),
+		zerolog.NewConsoleWriter(),
 	).With().Str("instance", "global").Timestamp().Logger()
 
 	// golog.SetOutput(l)
@@ -226,6 +226,7 @@ func newaddr(port int) *remoting.Endpoint {
 }
 
 func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
+	// m.T().Skip()
 	const numNodes = 10
 	// ports := freeport.MustNextN(numNodes)
 	serverPort := 2434
@@ -299,7 +300,6 @@ func (m *messagingSuite) TestJoinMultipleNodes_CheckRace() {
 		require.Equal(remoting.JoinStatusCode_SAFE_TO_JOIN, jr.GetStatusCode())
 	}
 
-	//<-time.After(5 * time.Second)
 	m.log.Printf("phase 2")
 	m.log.Printf("phase 2")
 	m.log.Printf("phase 2")

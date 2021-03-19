@@ -9,6 +9,7 @@ import (
 	"github.com/casualjim/go-rapid/api"
 	"github.com/casualjim/go-rapid/remoting"
 	"github.com/rs/zerolog"
+	"github.com/sasha-s/go-deadlock"
 	"google.golang.org/protobuf/encoding/prototext"
 )
 
@@ -47,7 +48,7 @@ func Unicast(client api.Client, filter Filter) Broadcaster {
 
 type unicastFiltered struct {
 	Filter Filter
-	sync.RWMutex
+	deadlock.RWMutex
 	members []*remoting.Endpoint
 	client  api.Client
 	rand    *rand.Rand

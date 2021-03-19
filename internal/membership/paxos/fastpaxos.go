@@ -262,7 +262,7 @@ func (c *counterMap) IncrementAndGet(endpoints []*remoting.Endpoint) int {
 }
 
 type syncEndpointSet struct {
-	lock sync.RWMutex
+	lock deadlock.RWMutex
 	data map[uint64]*remoting.Endpoint
 }
 

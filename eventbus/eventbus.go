@@ -5,6 +5,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/sasha-s/go-deadlock"
+
 	"github.com/rs/zerolog"
 )
 
@@ -153,7 +155,7 @@ type EventBus interface {
 }
 
 type defaultEventBus struct {
-	lock *sync.RWMutex
+	lock *deadlock.RWMutex
 
 	channel      chan Event
 	handlers     []*eventSubscription
@@ -173,7 +175,7 @@ func NewWithTimeout(log zerolog.Logger, timeout time.Duration) EventBus {
 		closing:      make(chan chan struct{}),
 		channel:      make(chan Event, 100),
 		log:          log,
-		lock:         new(sync.RWMutex),
+		lock:         new(deadlock.RWMutex),
 		errorHandler: func(err error) { log.Debug().Msg(err.Error()) },
 	}
 	go e.dispatcherLoop(timeout)

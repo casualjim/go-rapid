@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"sync"
 
 	"github.com/casualjim/go-rapid/internal/epchecksum"
 	"github.com/rs/zerolog"
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/casualjim/go-rapid/remoting"
 )
@@ -36,7 +36,7 @@ type MultiNodeCutDetector struct {
 	proposals         []*remoting.Endpoint
 	preProposal       map[uint64]*remoting.Endpoint
 	seenLinkDown      bool
-	lock              sync.RWMutex
+	lock              deadlock.RWMutex
 }
 
 // KnownProposals for this buffer

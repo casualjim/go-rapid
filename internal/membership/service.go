@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -81,7 +80,7 @@ type Service struct {
 
 	ctx context.Context
 
-	updateLock       sync.RWMutex
+	updateLock       deadlock.RWMutex
 	joiners          *joinerData
 	joinersToRespond *joiners
 	client           api.Client
@@ -101,6 +100,7 @@ type Service struct {
 	edgeFailures            *edgefailure.Scheduler
 	broadcaster             broadcast.Broadcaster
 	alertBatcher            *broadcast.AlertBatcher
+	handler                 chan serviceRequest
 }
 
 func (s *Service) CurrentEndpoints(ctx context.Context) []*remoting.Endpoint {
@@ -162,11 +162,26 @@ func (s *Service) Init() error {
 	return nil
 }
 
+// func (s *Service) startHandlerLoop() {
+// 	s.handler = make(chan serviceRequest, 100)
+// 	go func() {
+// 		for msg := range s.handler {
+// 			res, err := s.handleRequest(msg.ctx, msg.req)
+// 			msg.replyCh <- ServiceResponse{
+// 				Resp: res,
+// 				Err:  err,
+// 			}
+// 			close(msg.replyCh)
+// 		}
+// 	}()
+// }
+
 func (s *Service) Start() error {
 	lg := s.ctxLog(s.ctx)
 	lg.Debug().Msg("starting membership service")
 	s.broadcaster.Start()
 	s.alertBatcher.Start()
+	// s.startHandlerLoop()
 
 	s.updateLock.Lock()
 	paxosInstance, err := paxos.New(
@@ -198,6 +213,7 @@ func (s *Service) Stop() {
 	s.edgeFailures.CancelAll()
 	s.alertBatcher.Stop()
 	s.broadcaster.Stop()
+	// close(s.handler)
 	s.ctxLog(s.ctx).Info().Msg("membership service stopped")
 }
 
@@ -382,8 +398,47 @@ func (s *Service) onEdgeFailure() api.EdgeFailureCallback {
 	}
 }
 
-// Handle the rapid request
+type serviceRequest struct {
+	ctx     context.Context
+	req     *remoting.RapidRequest
+	replyCh chan<- ServiceResponse
+}
+
+type ServiceResponse struct {
+	Resp *remoting.RapidResponse
+	Err  error
+}
+
+// var singleThreadExecutor deadlock.Mutex
+
 func (s *Service) Handle(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
+	if req.GetContent() == nil {
+		return defaultResponse, nil
+	}
+
+	// switch req.Content.(type) {
+	// // case *remoting.RapidRequest_BatchedAlertMessage:
+	// // 	return s.handleBatchedAlertMessage(ctx, req.GetBatchedAlertMessage())
+	// case *remoting.RapidRequest_ProbeMessage:
+	// 	return defaultResponse, nil
+	// default:
+	// 	resCh := make(chan ServiceResponse, 1)
+	// 	s.handler <- serviceRequest{
+	// 		ctx:     ctx,
+	// 		req:     proto.Clone(req).(*remoting.RapidRequest),
+	// 		replyCh: resCh,
+	// 	}
+	// 	res := <-resCh
+	// 	return res.Resp, res.Err
+	// }
+	// singleThreadExecutor.Lock()
+	// defer singleThreadExecutor.Unlock()
+	return s.handleRequest(ctx, req)
+
+}
+
+// Handle the rapid request
+func (s *Service) handleRequest(ctx context.Context, req *remoting.RapidRequest) (*remoting.RapidResponse, error) {
 	if req.GetContent() == nil {
 		return defaultResponse, nil
 	}
@@ -396,6 +451,9 @@ func (s *Service) Handle(ctx context.Context, req *remoting.RapidRequest) (*remo
 	case *remoting.RapidRequest_BatchedAlertMessage:
 		return s.handleBatchedAlertMessage(ctx, req.GetBatchedAlertMessage())
 	case *remoting.RapidRequest_ProbeMessage:
+		return defaultResponse, nil
+	case *remoting.RapidRequest_LeaveMessage:
+		s.onEdgeFailure()(ctx, req.GetLeaveMessage().GetSender())
 		return defaultResponse, nil
 	default:
 		// try if this event is known by paxos

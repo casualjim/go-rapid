@@ -64,7 +64,7 @@ func TestScheduler_CancelOne(t *testing.T) {
 	t.Parallel()
 
 	addr := api.Must(api.Endpoint("127.0.0.1:3939"))
-	addr2 := api.Must(api.Endpoint("12.0.0.1:3592"))
+	addr2 := api.Must(api.Endpoint("127.0.0.1:3592"))
 
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -90,10 +90,10 @@ func TestScheduler_CancelOne(t *testing.T) {
 	})
 
 	callbacks := func() api.EdgeFailureCallback {
-		return api.EdgeFailureCallback(func(_ context.Context, _ *remoting.Endpoint) {})
+		return func(_ context.Context, _ *remoting.Endpoint) {}
 	}
 
-	sched := NewScheduler(context.Background(), detector, callbacks, 10*time.Millisecond)
+	sched := NewScheduler(context.Background(), detector, callbacks, 50*time.Millisecond)
 	sched.baseContext = ctx
 	sched.cancelAll = cancel
 	sched.Schedule(addr)

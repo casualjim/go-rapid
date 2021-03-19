@@ -8,8 +8,9 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
-	"sync"
 	"unsafe"
+
+	"github.com/sasha-s/go-deadlock"
 
 	"github.com/rs/zerolog"
 
@@ -73,7 +74,7 @@ func NewView(k int, nodeIDs []*remoting.NodeId, nodeAddrs []*remoting.Endpoint) 
 type View struct {
 	k                         int
 	rings                     []*endpointList
-	lock                      sync.RWMutex
+	lock                      deadlock.RWMutex
 	identifiersSeen           nodeIDList
 	cachedObservers           map[uint64][]*remoting.Endpoint
 	allNodes                  map[uint64]bool

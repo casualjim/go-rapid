@@ -70,6 +70,8 @@ type Server struct {
 	grpc     *grpc.Server
 	memSvc   atomic.Value
 	msvcLock deadlock.Mutex
+
+	//dispatcher *dispatcher
 }
 
 var (

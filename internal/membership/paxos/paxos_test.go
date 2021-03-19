@@ -1,7 +1,6 @@
 package paxos
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Workiva/go-datastructures/trie/ctrie"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/cornelk/hashmap"
 	"github.com/rs/zerolog"
@@ -490,7 +490,7 @@ func (p *paxosSuite) TestClassicRoundAfterSuccessfulFastRoundMixedValues() {
 				var contains bool
 				expected := decision[0][0]
 				for _, v := range tc.DecisionChoices {
-					if bytes.Equal(v.GetHostname(), expected.GetHostname()) && v.GetPort() == expected.GetPort() {
+					if proto.Equal(v, expected) { //} bytes.Equal(v.GetHostname(), expected.GetHostname()) && v.GetPort() == expected.GetPort() {
 						contains = true
 						break
 					}

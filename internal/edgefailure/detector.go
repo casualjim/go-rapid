@@ -88,6 +88,11 @@ func (p *Scheduler) Schedule(endpoint *remoting.Endpoint) {
 	}(endpoint)
 }
 
+func (p *Scheduler) Notify(ctx context.Context, cs uint64, endpoint *remoting.Endpoint) {
+	detector := p.factory.Create(endpoint, p.onFailure())
+	detector.Detect(ctx)
+}
+
 func (p *Scheduler) CancelAll() {
 	p.lock.Lock()
 	p.cancelAll()
